@@ -31,9 +31,10 @@ from typing import Optional
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ChatType, ParseMode
-from aiogram.filters import CommandObject, CommandStart
+from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import (
-    CallbackQuery, ChatMemberUpdated, InlineKeyboardButton, InlineKeyboardMarkup, Message, User,
+    BotCommand, BotCommandScopeChat, CallbackQuery, ChatMemberUpdated, InlineKeyboardButton,
+    InlineKeyboardMarkup, Message, User,
 )
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
@@ -85,12 +86,12 @@ STYLE = {"red": "danger", "orange": "danger", "green": "success", "blue": "prima
 
 # کمیابی آیتم‌ها: (نام، ایموجی رنگی، وزن، ارزش طلا)
 RARITIES = [
-    ("معمولی", "⬜", 50, 5),
-    ("غیرمعمول", "🟩", 25, 12),
-    ("نادر", "🟦", 14, 30),
-    ("حماسی", "🟪", 7, 70),
-    ("افسانه‌ای", "🟨", 3, 150),
-    ("نفرین‌شده", "🟥", 1, 0),
+    ("معمولی", "🪵", 50, 5),
+    ("غیرمعمول", "🍀", 25, 12),
+    ("نادر", "💎", 14, 30),
+    ("حماسی", "🔮", 7, 70),
+    ("افسانه‌ای", "👑", 3, 150),
+    ("نفرین‌شده", "💀", 1, 0),
 ]
 
 
@@ -111,15 +112,15 @@ def kb(*rows) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[list(r) for r in rows if r])
 
 
-PANEL_SQUARES = {"red": "🟥", "orange": "🟧", "yellow": "🟨", "green": "🟩",
-                 "blue": "🟦", "purple": "🟪", "black": "⬛", "brown": "🟫"}
+PANEL_ACCENTS = {"red": "🔥", "orange": "☄️", "yellow": "✨", "green": "🌿",
+                 "blue": "💠", "purple": "🔮", "black": "🌑", "brown": "🪵"}
 
 
 def panel(color: str, icon: str, title: str, lines: list, foot: Optional[str] = None) -> str:
     """پنل رنگی: نوار رنگیِ بالا + عنوان + بلاک‌کوت. lines باید از قبل HTML-safe باشن."""
-    sq = PANEL_SQUARES.get(color, "🟪")
-    body = "\n".join(lines).replace("┈┈┈┈┈┈┈┈┈┈", sq * 6)
-    s = f"{sq * 8}\n{icon} <b>{esc(title)}</b>\n<blockquote>{body}</blockquote>"
+    ac = PANEL_ACCENTS.get(color, "🔮")
+    body = "\n".join(lines)
+    s = f"{ac} {icon} <b>{esc(title)}</b>\n<blockquote>{body}</blockquote>"
     if foot:
         s += "\n" + foot
     return s
@@ -129,13 +130,12 @@ def hp_bar(rate: int) -> str:
     """نوار بقای رنگی: سبز (امن) / زرد (خطر) / قرمز (بحرانی)."""
     rate = max(0, min(100, rate))
     n = round(rate / 10)
-    cell = "🟩" if rate >= 60 else ("🟨" if rate >= 30 else "🟥")
-    return cell * n + "⬛" * (10 - n)
+    return "▰" * n + "▱" * (10 - n)
 
 
 def xp_bar(xp: int) -> str:
     n = max(0, min(10, (xp % 100) // 10))
-    return "🟦" * n + "⬛" * (10 - n)
+    return "▰" * n + "▱" * (10 - n)
 
 
 def roll_item(pool: list) -> tuple:
@@ -332,7 +332,7 @@ BIOMES = {
         "items": ["قارچ درخشانِ مشکوک", "تبر زنگ‌زده‌ی هیزم‌شکن افسانه‌ای", "پر ققنوسِ نیم‌سوخته", "گل‌ساز شبانه", "کمان بی‌زه", "کلید چوبیِ یه در نامعلوم"],
         "monsters": [("گابلینِ بیکار", 18), ("گرگِ وگان", 32), ("اسلایمِ افسرده", 10), ("درختِ بداخلاق", 42)],
         "traps": ["پات رفت تو لونه‌ی زنبورای متعصب", "روی ریشه‌ی درخت کمین‌دار سکندری خوردی", "عنکبوتِ غول‌پیکر تارشو دور مچ پات تنید"],
-        "deaths": ["یه درختِ چندصدساله فکر کرد تو شاخه‌ای و قطعت کرد 🪓", "اسلایمِ سلطان تو رو با ژله‌ی خودش خفه کرد. ایزدبانو ازش قدردانی کرد. 🟢"],
+        "deaths": ["یه درختِ چندصدساله فکر کرد تو شاخه‌ای و قطعت کرد 🪓", "اسلایمِ سلطان تو رو با ژله‌ی خودش خفه کرد. ایزدبانو ازش قدردانی کرد. 🫧"],
         "w": {"find": 28, "monster": 28, "heal": 10, "trap": 14, "death": 3, "lore": 17},
     },
     "sea": {
@@ -575,18 +575,18 @@ BOARD_RE = re.compile(r"(رتبه\s*گروه|لیدربرد|جدول\s*رتبه|
 SMALL_TALK_HELP = (
     "📖 <b>راهنمای بازی</b>\n"
     "همه‌چیز با نوشتن یه جمله‌ی ساده یا زدن دکمه انجام میشه. 😊\n\n"
-    "🟩 <b>شروع:</b> بنویس «زندگی من» تا منوی بازی باز بشه\n"
-    "🟢 <b>سفر:</b> «سفر به جنگل» · «رفتم دریا» · «ورود به شهر» · «خرابه» · «گردش»\n"
-    "🟣 <b>NPC (آدم‌های شهر):</b> «گفتگو با پیرمرد» · «حرف زدن با مغازه‌دار» · «ورود به کافه»\n"
-    "🔵 <b>گیلد (تیم):</b> «ساخت گیلد [نام]» · «پیوستن به گیلد [نام]» · «گیلد من» · «جنگ گیلدها»\n"
+    "🚀 <b>شروع:</b> بنویس «زندگی من» تا منوی بازی باز بشه\n"
+    "🧭 <b>سفر:</b> «سفر به جنگل» · «رفتم دریا» · «ورود به شهر» · «خرابه» · «گردش»\n"
+    "🗣 <b>NPC (آدم‌های شهر):</b> «گفتگو با پیرمرد» · «حرف زدن با مغازه‌دار» · «ورود به کافه»\n"
+    "🏰 <b>گیلد (تیم):</b> «ساخت گیلد [نام]» · «پیوستن به گیلد [نام]» · «گیلد من» · «جنگ گیلدها»\n"
     "👑 <b>قلمرو:</b> «قلمروها» · «محاصره [نام قلمرو]»\n"
-    "🟠 <b>دوئل:</b> «دوئل با @یوزرنیم» یا ریپلای + «دوئل» · «قبول دوئل»\n"
-    "🟡 <b>شانس:</b> «گردونه شانس» · «ماموریت» · «رتبه گروه» · «لیدربرد»\n"
+    "⚔️ <b>دوئل:</b> «دوئل با @یوزرنیم» یا ریپلای + «دوئل» · «قبول دوئل»\n"
+    "🎰 <b>شانس:</b> «گردونه شانس» · «ماموریت» · «رتبه گروه» · «لیدربرد»\n"
     "🎁 <b>گروه:</b> «باز کردن» (صندوق) · «خنثی کردن» (بمب) · «احضار باس» · «حمله به باس»\n"
     "💍 <b>پیوند:</b> «ازدواج با @یوزرنیم» · «قبول ازدواج» · «طلاق»\n"
-    "⬛ <b>بازار سیاه:</b> «بازار سیاه» · «میخرم»\n"
-    "🔴 <b>مرگ و نفرین:</b> «ریسپاون» · «@یوزرنیم رو بفرست ایسکای» · ریپلای + «نفرینت می‌کنم» یا «دعات می‌کنم»\n"
-    "⚪ <b>پروفایل:</b> «کارت من» · «لقب هام چیه» · «کوله پشتی» · «لینک دعوت» · «من بازی نمیکنم»\n\n"
+    "🕶 <b>بازار سیاه:</b> «بازار سیاه» · «میخرم»\n"
+    "☠️ <b>مرگ و نفرین:</b> «ریسپاون» · «@یوزرنیم رو بفرست ایسکای» · ریپلای + «نفرینت می‌کنم» یا «دعات می‌کنم»\n"
+    "🪪 <b>پروفایل:</b> «کارت من» · «لقب هام چیه» · «کوله پشتی» · «لینک دعوت» · «من بازی نمیکنم»\n\n"
     "💡 <i>گیج شدی؟ فقط «زندگی من» بنویس و دکمه‌ها رو بزن.</i>"
 )
 
@@ -1088,7 +1088,7 @@ async def finish_registration(user: User, cls_key: str, boon_key: str) -> Option
     elif boon_key == "xp":
         await grant(user.id, xp=100)
     else:
-        item = f"🟨 {random.choice(['تاجِ فراموش‌شده‌ی آخرالزمان', 'شمشیرِ بی‌نامِ دروازه‌ی آخر', 'حلقه‌ی پایانِ همه‌چیز'])} ‹افسانه‌ای›"
+        item = f"👑 {random.choice(['تاجِ فراموش‌شده‌ی آخرالزمان', 'شمشیرِ بی‌نامِ دروازه‌ی آخر', 'حلقه‌ی پایانِ همه‌چیز'])} ‹افسانه‌ای›"
         await grant(user.id, item=item)
     return await store.get(user.id)
 
@@ -1517,7 +1517,7 @@ async def do_trade(m: Message) -> bool:
     if not await spend(uid, pt["price"]):
         await say(m, "«طلات کمه! برو ماجراجویی کن و با پول برگرد.» 🪙", "🧔", "مغازه‌دارِ بی‌اعتماد", "yellow")
         return True
-    item = f"🟪 {pt['item']} ‹معامله‌ی مشکوک›"
+    item = f"🕵️ {pt['item']} ‹معامله‌ی مشکوک›"
     await store.users.update_one(
         {"user_id": uid},
         {"$set": {"pending_trade": None}, "$push": {"inventory": {"$each": [item], "$slice": -15}}},
@@ -1670,9 +1670,9 @@ async def do_guild_war(m: Message):
     await add_guild_pts(wg["name"], 20)
     await add_guild_pts(lg["name"], 5)
     await m.reply(panel("red", "⚔️", "جنگ گیلدها!", [
-        f"🟦 <b>{esc(g['name'])}</b>  ⚡{int(sa)}",
+        f"🛡 <b>{esc(g['name'])}</b>  ⚡{int(sa)}",
         "      ⚔️ VS ⚔️",
-        f"🟥 <b>{esc(foe['name'])}</b>  ⚡{int(sb)}",
+        f"🗡 <b>{esc(foe['name'])}</b>  ⚡{int(sb)}",
         "┈┈┈┈┈┈┈┈┈┈",
         f"🏆 برنده: <b>{esc(wg['name'])}</b> — هر عضو 🪙+۳۰ و ۱۵ XP",
         f"🪦 بازنده: {esc(lg['name'])} (دفعه‌ی بعد بهتر میشه! 💪)",
@@ -1738,7 +1738,7 @@ async def do_duel_request(m: Message, uname: Optional[str]) -> bool:
         "status": "pending", "created_at": utcnow(), "expires_at": utcnow() + timedelta(seconds=DUEL_TTL),
     })
     await m.reply(panel("orange", "⚔️", "چالش دوئل!", [
-        f"🟧 {esc(a.full_name)} داره {display(target, link=True)} رو به دوئل دعوت می‌کنه!",
+        f"⚔️ {esc(a.full_name)} داره {display(target, link=True)} رو به دوئل دعوت می‌کنه!",
         "⏳ ۳ دقیقه وقت داره که قبول کنه.",
     ], "برای قبول بنویس: «<b>قبول دوئل</b>» یا دکمه‌ی پایین رو بزن 🥊"),
         reply_markup=kb([btn("🥊 قبول دوئل", f"duelacc:{target['user_id']}", "green")]))
@@ -1767,9 +1767,9 @@ async def do_duel_accept(m: Message) -> bool:
     ldoc, _ = await grant(lose_doc["user_id"], xp=6, survival=-loss, counters={"losses": 1})
     await store.groups.update_one({"chat_id": m.chat.id}, {"$inc": {"duels": 1}}, upsert=True)
     lines = [
-        f"🟧 {display(da, link=True)} ⚡{int(pa)}",
+        f"🛡 {display(da, link=True)} ⚡{int(pa)}",
         "      ⚔️ VS ⚔️",
-        f"🟦 {display(db_, link=True)} ⚡{int(pb)}",
+        f"🗡 {display(db_, link=True)} ⚡{int(pb)}",
         "┈┈┈┈┈┈┈┈┈┈",
         f"🏆 برنده: {display(wdoc, link=True)} — 🪙+{wg} و ۲۵ XP",
         f"🩸 بازنده: {display(ldoc, link=True)} — −{loss}٪ بقا ({hp_bar(ldoc['survival_rate'])})",
@@ -1804,28 +1804,28 @@ async def do_wheel(m: Message):
     if roll < 0.55:
         rate = random.randint(25, 70)
         await store.users.update_one({"user_id": uid}, {"$set": {**base_set, "survival_rate": rate, "status": status_for(rate)}})
-        lines = ["🟩 <b>چرخش معمولی</b>", f"🎁 چیت‌اسکیل جدید: {esc(cheat)}", f"💚 بقا ریست شد: <b>{rate}٪</b> {hp_bar(rate)}"]
+        lines = ["🎡 <b>چرخش معمولی</b>", f"🎁 چیت‌اسکیل جدید: {esc(cheat)}", f"💚 بقا ریست شد: <b>{rate}٪</b> {hp_bar(rate)}"]
         color = "green"
     elif roll < 0.75:
         gold = random.randint(100, 250)
         item, _, _ = roll_item(["تاج گردونه‌ی شانس", "سکه‌ی چهارپری", "طلسم خوش‌شانسی (۵۰٪ جعلی)"])
-        item = "🟨 " + item.split(" ", 1)[1]
+        item = "👑 " + item.split(" ", 1)[1]
         rate = random.randint(50, 90)
         await store.users.update_one({"user_id": uid}, {
             "$set": {**base_set, "survival_rate": rate, "status": status_for(rate)},
             "$inc": {"gold": gold}, "$push": {"inventory": {"$each": [item], "$slice": -15}},
         })
-        lines = ["🟨 <b>جک‌پات!!</b> 🎰", f"🪙 +{gold} طلا", f"🎁 {esc(item)}", f"✨ چیت‌اسکیل: {esc(cheat)}", f"💚 بقا: <b>{rate}٪</b> {hp_bar(rate)}"]
+        lines = ["💰 <b>جک‌پات!!</b> 🎰", f"🪙 +{gold} طلا", f"🎁 {esc(item)}", f"✨ چیت‌اسکیل: {esc(cheat)}", f"💚 بقا: <b>{rate}٪</b> {hp_bar(rate)}"]
         color = "yellow"
     elif roll < 0.9:
         await store.users.update_one({"user_id": uid}, {"$set": base_set, "$inc": {"gold": 40}})
         d2 = await adjust_survival(uid, 15)
-        lines = ["🟦 <b>برکت خفیف</b>", f"🪙 +۴۰ طلا", f"💚 +۱۵٪ بقا → <b>{d2['survival_rate']}٪</b> {hp_bar(d2['survival_rate'])}", f"✨ چیت‌اسکیل: {esc(cheat)}"]
+        lines = ["🙏 <b>برکت خفیف</b>", f"🪙 +۴۰ طلا", f"💚 +۱۵٪ بقا → <b>{d2['survival_rate']}٪</b> {hp_bar(d2['survival_rate'])}", f"✨ چیت‌اسکیل: {esc(cheat)}"]
         color = "blue"
     else:
         rate = random.randint(1, 10)
         await store.users.update_one({"user_id": uid}, {"$set": {**base_set, "survival_rate": rate, "status": status_for(rate)}, "$inc": {"xp": 20}})
-        lines = ["🟥 <b>نفرین گردونه!</b> ☠️", f"💚 بقا سقوط کرد: <b>{rate}٪</b> {hp_bar(rate)}", "🎁 جایزه‌ی تسلی: ۲۰ XP", f"✨ چیت‌اسکیل: {esc(cheat)}"]
+        lines = ["🩸 <b>نفرین گردونه!</b> ☠️", f"💚 بقا سقوط کرد: <b>{rate}٪</b> {hp_bar(rate)}", "🎁 جایزه‌ی تسلی: ۲۰ XP", f"✨ چیت‌اسکیل: {esc(cheat)}"]
         color = "red"
     await m.reply(panel(color, "🎡", "گردونه‌ی شانس", lines, "فردا دوباره بیا. 🎡 (هر ۲۴ ساعت یه بار)"),
                   reply_markup=kb([btn("📜 ماموریت‌ها", f"m:quest:{uid}", "blue"), btn("🌙 منو", f"m:main:{uid}", "green")]))
@@ -1852,12 +1852,10 @@ async def do_board(m: Message):
         return
     scored = sorted([await group_score(g["chat_id"], g) for g in groups], key=lambda x: -x["score"])
     medals = ["🥇", "🥈", "🥉"]
-    colors = ["🟨", "⬜", "🟫"]
     lines = []
     for i, s in enumerate(scored[:8]):
         mk = medals[i] if i < 3 else f"{i + 1}."
-        co = colors[i] if i < 3 else "⬛"
-        lines.append(f"{mk} {co} <b>{esc(s['title'])}</b> — ⚡{s['score']}\n      👥{s['members']} ⚔️{s['duels']} ☠️{s['deaths']}")
+        lines.append(f"{mk} <b>{esc(s['title'])}</b> — ⚡{s['score']}\n      👥{s['members']} ⚔️{s['duels']} ☠️{s['deaths']}")
     foot = ""
     if is_group(m):
         pos = next((i + 1 for i, s in enumerate(scored) if s["chat_id"] == m.chat.id), None)
@@ -2117,7 +2115,7 @@ async def do_quests(m):
     q = await ensure_quests(uid)
 
     def row(it: dict) -> str:
-        mark = "✅" if it["done"] else "▫️"
+        mark = "✅" if it["done"] else "⏳"
         return f"{mark} {esc(it['t'])}\n      ({it['have']}/{it['need']}) 🪙{it['gold']} ⭐{it['xp']}"
 
     lines = ["👇 ماموریت‌ها رو انجام بده و طلا و XP بگیر!", "📅 <b>روزانه</b> (ریست ساعت ۰۰ به وقت ایران)"] + [row(i) for i in q.get("daily", [])]
@@ -2235,9 +2233,9 @@ async def do_siege(m, key: str):
     await store.guilds.update_one({"_id": g["_id"]}, {"$set": {"last_siege_at": utcnow()}})
     defender = esc(holder["name"]) if holder else f"نگهبانانِ {name}"
     lines = [
-        f"🟦 <b>{esc(g['name'])}</b>  ⚡{int(sa)}",
+        f"🛡 <b>{esc(g['name'])}</b>  ⚡{int(sa)}",
         "      ⚔️ محاصره ⚔️",
-        f"🟥 <b>{defender}</b>  ⚡{int(sd)}",
+        f"🗡 <b>{defender}</b>  ⚡{int(sd)}",
         "┈┈┈┈┈┈┈┈┈┈",
     ]
     if win:
@@ -2278,7 +2276,7 @@ async def spawn_drop(bot: Bot, chat_id: int):
             "اولین نفری که «<b>باز کردن</b>» بنویسه (یا دکمه رو بزنه) صاحبش میشه.",
             "💅 <i>«شاید گنج باشه، شاید دندون‌دار. ریسکش با خودته.»</i>",
         ], f"⏳ {LOOT_TTL // 60} دقیقه وقت داری")
-        mk = kb([btn("🟩 باز کردن صندوق", "loot:open:0", "green")])
+        mk = kb([btn("📦 باز کردن صندوق", "loot:open:0", "green")])
     else:
         text = panel("red", "💣", "بمب ساعتیِ جادویی!", [
             "یه بمبِ ساعتیِ کوچولو افتاد وسط گروه و داره تیک‌تاک می‌کنه… ⏱",
@@ -2476,7 +2474,7 @@ async def do_marry_info(m, doc: dict):
 # ───────────────────────────── 🐉 باس گروهی (سیاه‌چاله‌ی چندنفره) ─────────────────────────────
 def boss_bar(hp: int, mx: int) -> str:
     n = max(0, min(10, round(10 * max(hp, 0) / mx))) if mx else 0
-    return "🟥" * n + "⬛" * (10 - n)
+    return "▰" * n + "▱" * (10 - n)
 
 
 async def active_raid(chat_id: int) -> Optional[dict]:
@@ -2612,9 +2610,9 @@ async def raid_victory(m, r: dict):
         gold = int(pool * d / total) + 30
         item = None
         if u == top_uid:
-            item = f"🟨 {random.choice(['پوستِ', 'دندانِ', 'تاجِ', 'قلبِ'])} {r['name']} ‹غنیمت باس›"
+            item = f"👑 {random.choice(['پوستِ', 'دندانِ', 'تاجِ', 'قلبِ'])} {r['name']} ‹غنیمت باس›"
         await grant(u, gold=gold, xp=60, item=item)
-        lines.append(f"{'🥇' if u == top_uid else '▫️'} {esc(r['names'].get(str(u), '؟'))} — 💥{d}  🪙+{gold}" + (" 🎁 غنیمتِ ویژه" if item else ""))
+        lines.append(f"{'🥇' if u == top_uid else '•'} {esc(r['names'].get(str(u), '؟'))} — 💥{d}  🪙+{gold}" + (" 🎁 غنیمتِ ویژه" if item else ""))
     await m.reply(panel("green", "🏆", "غنایمِ باس", lines,
                         "💅 <i>«…بد نبود. ولی غنیمت رو خرج کن، قبل از این‌که برگردم و پسش بگیرم.»</i>"))
 
@@ -2656,7 +2654,7 @@ async def admin_stats() -> str:
     deaths = d_res[0]["t"] if d_res else 0
     return panel("blue", "📊", "آمار حیاتی ربات", [
         f"👤 کل کاربران: <b>{u_count}</b>  (ثبت‌نام‌شده: {reg})",
-        f"🟢 فعال در ۲۴ ساعت: <b>{active}</b>",
+        f"🔥 فعال در ۲۴ ساعت: <b>{active}</b>",
         f"🚫 بن‌شده: <b>{banned}</b>",
         f"☠️ مجموع مرگ‌ومیرها: <b>{deaths}</b>",
         f"🛡 گیلدها: <b>{g_count}</b>  |  👥 گروه‌ها: <b>{gr_count}</b>",
@@ -2847,6 +2845,101 @@ async def on_callback(cq: CallbackQuery, bot: Bot):
             await cq.answer("یه مشکل کوچیک پیش اومد. دوباره امتحان کن. 🛠", show_alert=True)
         except Exception:
             pass
+
+
+# ───────────────────────────── ⌨️ منوی اسلش (/) ─────────────────────────────
+# هر دستور: نام لاتین → (عبارت فارسی معادل، توضیح داخل منوی تلگرام، آرگومان: "" | "opt" | "req")
+# {a} جای آرگومان می‌شینه. دستورها همون پیام فارسیِ معادل رو شبیه‌سازی می‌کنن، پس منطق بازی دست‌نخورده می‌مونه.
+SLASH = {
+    "menu":         ("منو", "🌙 منوی اصلی بازی", ""),
+    "help":         ("راهنما", "📖 راهنمای کامل بازی", ""),
+    "register":     ("ثبت نام", "📜 ثبت‌نام و امضای قرارداد", ""),
+    "me":           ("کارت من", "🪪 کارت و وضعیت من", ""),
+    "inv":          ("کوله پشتی", "🎒 کوله‌پشتی", ""),
+    "titles":       ("لقب هام", "🏷 لقب‌های من", ""),
+    "invite":       ("لینک دعوت", "🔗 لینک دعوت اختصاصی", ""),
+    "quests":       ("ماموریت", "📋 ماموریت‌های روزانه و هفتگی", ""),
+    "map":          ("قلمرو", "🗺 قلمروها و پادشاه هفته", ""),
+    "siege":        ("محاصره {a}", "🏴 محاصره‌ی قلمرو (مثلاً /siege قلعه)", "req"),
+    "explore":      ("گردش", "🧭 گشت و ماجراجویی", ""),
+    "travel":       ("سفر به {a}", "✈️ سفر به جایی (جنگل، دریا، شهر، خرابه)", "req"),
+    "npc":          ("گفتگو با {a}", "🗣 حرف زدن با NPC (پیرمرد، جادوگر...)", "req"),
+    "cafe":         ("ورود به کافه", "☕ رفتن به کافه", ""),
+    "wheel":        ("گردونه شانس", "🎡 چرخوندن گردونه‌ی شانس", ""),
+    "board":        ("لیدربرد", "🏆 رتبه‌بندی گروه‌ها", ""),
+    "market":       ("بازار سیاه", "🕶 بازار سیاه", ""),
+    "buy":          ("میخرم", "💸 خرید از بازار سیاه", ""),
+    "trade":        ("قبول معامله", "🤝 قبول معامله با مغازه‌دار", ""),
+    "duel":         ("دوئل با {a}", "⚔️ دعوت به دوئل (/duel @یوزرنیم یا ریپلای)", "opt"),
+    "accept":       ("قبول دوئل", "🛡 قبول دوئل", ""),
+    "curse":        ("نفرینت می‌کنم", "😈 نفرین کردن (ریپلای روی طرف)", ""),
+    "bless":        ("دعات می‌کنم", "🙏 دعای خیر (ریپلای روی طرف)", ""),
+    "exec":         ("@{a} رو بفرست ایسکای", "☠️ اعدام اجباری (/exec @یوزرنیم)", "req"),
+    "respawn":      ("ریسپاون", "💀 مرگ داوطلبانه و بازتولد", ""),
+    "guild_create": ("ساخت گیلد {a}", "🏰 ساخت گیلد (/guild_create نام)", "req"),
+    "guild_join":   ("پیوستن به گیلد {a}", "🚪 پیوستن به گیلد (/guild_join نام)", "req"),
+    "guild_me":     ("گیلد من", "🏰 گیلد من", ""),
+    "guild_leave":  ("ترک گیلد", "👋 ترک گیلد", ""),
+    "guild_invite": ("دعوت {a} به گیلد", "📨 دعوت به گیلد (/guild_invite @یوزرنیم)", "opt"),
+    "guild_war":    ("جنگ گیلدها", "⚔️ جنگ گیلدها", ""),
+    "marry":        ("ازدواج با {a}", "💍 درخواست ازدواج (/marry @یوزرنیم)", "opt"),
+    "marry_yes":    ("قبول ازدواج", "💖 قبول ازدواج", ""),
+    "marry_no":     ("رد ازدواج", "💔 رد ازدواج", ""),
+    "divorce":      ("طلاق", "📄 طلاق", ""),
+    "open":         ("باز کردن", "📦 باز کردن صندوق گنج", ""),
+    "defuse":       ("خنثی کردن", "💣 خنثی کردن بمب", ""),
+    "boss_call":    ("احضار باس", "🐉 احضار باس", ""),
+    "boss_hit":     ("حمله به باس", "🗡 حمله به باس", ""),
+    "boss":         ("وضعیت باس", "🐲 وضعیت باس", ""),
+    "optout":       ("من بازی نمیکنم", "🛡 فعال‌سازی محافظت (غیرفعال‌سازی بازی)", ""),
+    "optin":        ("برگردم به بازی", "😈 برگشتن به بازی", ""),
+}
+# دستورهای مخصوص ادمین (فقط تو منوی ادمین‌ها دیده میشن؛ دسترسی داخل handle_admin_commands چک میشه)
+ADMIN_SLASH = {
+    "admin":     ("پنل ادمین", "🔑 پنل ادمین", ""),
+    "stats":     ("آمار ربات", "📊 آمار ربات", ""),
+    "health":    ("سلامت سرور", "🩺 سلامت سرور", ""),
+    "cleanup":   ("پاکسازی", "🧹 پاکسازی دیتابیس", ""),
+    "ban":       ("بن {a}", "🚫 بن کاربر (آیدی عددی یا ریپلای)", "opt"),
+    "unban":     ("آنبن {a}", "✅ آنبن کاربر", "opt"),
+    "kill":      ("کشتن {a}", "☠️ کشتن بازیکن (آیدی عددی)", "req"),
+    "broadcast": ("سراسری {a}", "📢 پیام سراسری", "req"),
+}
+_ALL_SLASH = {**SLASH, **ADMIN_SLASH}
+
+
+@router.message(Command(*_ALL_SLASH.keys()))
+async def on_slash(m: Message, command: CommandObject, bot: Bot):
+    """دستورهای اسلش رو به همون عبارت فارسی تبدیل می‌کنه و می‌ده به handle_text."""
+    if not m.from_user or m.from_user.is_bot:
+        return
+    tpl, _desc, arg_mode = _ALL_SLASH[command.command.lower()]
+    args = (command.args or "").strip()
+    if arg_mode == "req" and not args:
+        await m.reply(f"این دستور آرگومان می‌خواد. مثال:\n<code>/{command.command} …</code>\n{_desc}")
+        return
+    text = re.sub(r"\s+", " ", tpl.replace("{a}", args)).strip()
+    try:
+        await handle_text(m.model_copy(update={"text": text}), bot)
+    except Exception:
+        log.exception("slash handler failed")
+        await say(m, "یه مشکل فنی پیش اومد. چند لحظه‌ی دیگه دوباره امتحان کن. 🛠", "🛠", "خطای سیستم", "red")
+
+
+async def setup_commands(bot: Bot):
+    """منوی / تلگرام: کاربرها لیست بازی رو می‌بینن، ادمین‌ها لیست کامل‌تر."""
+    try:
+        user_cmds = [BotCommand(command="start", description="🚀 شروع بازی")] + \
+                    [BotCommand(command=k, description=v[1][:256]) for k, v in SLASH.items()]
+        await bot.set_my_commands(user_cmds)
+        admin_cmds = user_cmds + [BotCommand(command=k, description=v[1][:256]) for k, v in ADMIN_SLASH.items()]
+        for aid in ADMIN_IDS:
+            try:
+                await bot.set_my_commands(admin_cmds, scope=BotCommandScopeChat(chat_id=aid))
+            except Exception:
+                log.warning("admin command menu failed for %s", aid)
+    except Exception:
+        log.exception("set_my_commands failed")
 
 
 @router.message(F.text)
@@ -3130,6 +3223,7 @@ async def main():
 
     dp = Dispatcher()
     dp.include_router(router)
+    await setup_commands(bot)
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
 
