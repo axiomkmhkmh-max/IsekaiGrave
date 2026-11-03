@@ -1,0 +1,126 @@
+"""سیستم ثبت‌نام: انتخاب کلاس و سوگند، و پیام دعوت به ثبت‌نام."""
+
+import random
+import time
+from typing import Optional
+
+from aiogram.types import InlineKeyboardMarkup, User
+
+from config import REG_PROMPT_COOLDOWN, runtime
+from content import BOONS, CHEATS, CLASSES, FORMS, GODDESS_NAME, GODDESS_TITLE, WORLDS
+from database import store
+from players import grant, status_for
+from render import stat_lines
+from ui import btn, kb, panel
+from utils import esc, is_group, utcnow
+
+
+_last_reg_prompt: dict = {}
+
+
+# ───────────────────────────── 📜 سیستم ثبت‌نام ─────────────────────────────
+def reg_text_intro(name: str) -> str:
+    return panel("purple", "📜", "قرارداد روحِ ایسکای", [
+        f"{GODDESS_NAME}، <i>{GODDESS_TITLE}</i>، به <b>{esc(name)}</b> خیره شد…",
+        "💅 «یه روحِ تازه. اسمت تو لیست اشک‌ریزان نیست؛ یعنی هیچ‌کس برات گریه نمی‌کنه. عالی. قراردادمو امضا کن، وگرنه از دروازه‌م رد نمیشی.»",
+        "┈┈┈┈┈┈┈┈┈┈",
+        "برای شروع بازی، ۳ مرحله داری (فقط چند کلیکه 🙂):",
+        "① 🩸 امضای قرارداد",
+        "② 🎭 انتخاب کلاس (نوع شخصیتت)",
+        "③ 🕯 انتخاب هدیه‌ی شروع",
+        "┈┈┈┈┈┈┈┈┈┈",
+        "⚠️ <i>ریزنوشت: روحِ تو از این لحظه ملکِ منه. بازگشت پول و فرار ممنوع.</i>",
+    ])
+
+
+def reg_kb_intro(uid: int) -> InlineKeyboardMarkup:
+    return kb(
+        [btn("🩸 امضا می‌کنم", f"reg:sign:{uid}", "green")],
+        [btn("🏃 فرار از ایزدبانو", f"reg:run:{uid}", "red")],
+    )
+
+
+def reg_text_class() -> str:
+    lines = ["هر کلاس یه امتیاز ویژه داره؛ یکی رو انتخاب کن 👇", *[f"{c['icon']} <b>{c['name']}</b> — {c['desc']}" for c in CLASSES.values()]]
+    return panel("blue", "🎭", "مرحله‌ی ۲: کلاس‌ت رو انتخاب کن", lines,
+                 "💅 <i>«زیاد فکر نکن؛ هر کدوم رو برداری، آخرش مال منی.»</i>")
+
+
+def reg_kb_class(uid: int) -> InlineKeyboardMarkup:
+    ks = list(CLASSES.items())
+    mk = lambda k, c: btn(f"{c['icon']} {c['name']}", f"reg:cls:{k}:{uid}", c["color"])
+    return kb([mk(*ks[0]), mk(*ks[1])], [mk(*ks[2]), mk(*ks[3])])
+
+
+def reg_text_boon(cls_key: str) -> str:
+    c = CLASSES[cls_key]
+    lines = [f"{b['icon']} <b>{b['name']}</b> — {b['desc']}" for b in BOONS.values()]
+    return panel("red", "🕯", "مرحله‌ی ۳: سوگند به ایزدبانو", [
+        f"💅 «{c['quip']}»",
+        "┈┈┈┈┈┈┈┈┈┈",
+        "هدیه‌ی شروعت رو انتخاب کن (فقط یکی):",
+        *lines,
+    ])
+
+
+def reg_kb_boon(cls_key: str, uid: int) -> InlineKeyboardMarkup:
+    return kb(*[[btn(f"{b['icon']} {b['name']}", f"reg:boon:{cls_key}:{k}:{uid}", b["color"])] for k, b in BOONS.items()])
+
+
+async def finish_registration(user: User, cls_key: str, boon_key: str) -> Optional[dict]:
+    """ثبت‌نام رو نهایی می‌کنه. اگه قبلاً ثبت‌نام شده باشه None برمی‌گردونه."""
+    form, _ = random.choice(FORMS)
+    rate = random.randint(55, 90)
+    res = await store.users.update_one(
+        {"user_id": user.id, "registered": {"$ne": True}},
+        {"$set": {
+            "registered": True, "cls": cls_key, "pact": boon_key, "registered_at": utcnow(),
+            "form": form, "cheat_skill": random.choice(CHEATS), "world": random.choice(WORLDS),
+            "survival_rate": rate, "status": status_for(rate), "first_name": user.full_name,
+        }, "$push": {"titles": "روحِ ثبت‌شده‌ی ایزدبانو"}},
+    )
+    if res.modified_count == 0:
+        return None
+    if boon_key == "gold":
+        await grant(user.id, gold=150)
+    elif boon_key == "xp":
+        await grant(user.id, xp=100)
+    else:
+        item = f"👑 {random.choice(['تاجِ فراموش‌شده‌ی آخرالزمان', 'شمشیرِ بی‌نامِ دروازه‌ی آخر', 'حلقه‌ی پایانِ همه‌چیز'])} ‹افسانه‌ای›"
+        await grant(user.id, item=item)
+    return await store.get(user.id)
+
+
+def reg_done_text(doc: dict, cls_key: str, boon_key: str) -> str:
+    c, b = CLASSES[cls_key], BOONS[boon_key]
+    return panel("green", "🎉", "قرارداد امضا شد! به ایسکا خوش اومدی", [
+        f"🪪 <b>{esc(doc.get('first_name'))}</b> — {c['icon']} {c['name']}",
+        f"🕯 سوگند: {b['icon']} {b['name']}",
+        f"🧬 فرم اولیه: {esc(doc.get('form'))}",
+        f"🌍 دنیا: {esc(doc.get('world'))}",
+        f"🎁 چیت‌اسکیل: {esc(doc.get('cheat_skill'))}",
+        "┈┈┈┈┈┈┈┈┈┈",
+        *stat_lines(doc),
+        "🏷 لقب: «روحِ ثبت‌شده‌ی ایزدبانو»",
+    ], f"💅 <i>«{b['quip']} حالا برو. هر کاری می‌خوای بکن؛ آخرش مال منی.»</i>\n💡 برای باز کردن منوی بازی بنویس «زندگی من».")
+
+
+async def start_registration(m):
+    """پیام مرحله‌ی ۱ رو برای کاربر می‌فرسته."""
+    await m.reply(reg_text_intro(m.from_user.full_name), reply_markup=reg_kb_intro(m.from_user.id))
+
+
+async def reg_prompt(m):
+    """وقتی ثبت‌نام‌نشده می‌خواد بازی کنه."""
+    uid = m.from_user.id
+    now = time.time()
+    if now - _last_reg_prompt.get(uid, 0) < REG_PROMPT_COOLDOWN:
+        return
+    _last_reg_prompt[uid] = now
+    rows = [[btn("🩸 ثبت‌نام (همین‌جا)", f"reg:go:{uid}", "green")]]
+    if is_group(m) and runtime.bot_username:
+        rows.append([btn("📩 ثبت‌نام در پیوی", url=f"https://t.me/{runtime.bot_username}?start=reg")])
+    await m.reply(panel("red", "🚪", "دروازه بسته‌ست", [
+        f"💅 «{esc(m.from_user.first_name)}… بدون قرارداد، دروازه‌م به روت بسته‌ست. حتی مرده‌ها فرم پر می‌کنن؛ تو از مرده‌ها هم تنبل‌تری؟»",
+        "برای شروع بازی اول ثبت‌نام کن؛ فقط ۳ تا کلیکه 🙂",
+    ]), reply_markup=kb(*rows))

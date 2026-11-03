@@ -1,0 +1,191 @@
+"""هندلر کلیک دکمه‌های اینلاین."""
+
+from aiogram import Bot
+from aiogram.types import CallbackQuery, Message
+
+from admin import admin_clean, admin_health, ADMIN_HELP, admin_stats, is_admin
+from content import BIOMES, BOONS, CLASSES, NPCS, TERRITORIES
+from database import store
+from death import do_self_death
+from drops import claim_drop
+from duels import do_duel_accept
+from exploration import do_explore
+from guilds import do_guild_me, do_guild_war
+from intents import SMALL_TALK_HELP
+from inventory import send_inventory
+from leaderboard import do_board
+from market import do_buy, drop_offer
+from marriage import do_divorce, do_marry_info, marriage_answer
+from menus import help_kb, hub_kb, hub_text
+from npc import do_npc
+from quests import do_quests
+from raid import do_boss_call, do_boss_status, do_raid_hit
+from registration import (
+    finish_registration, reg_done_text, reg_kb_boon, reg_kb_class, reg_prompt, reg_text_boon,
+    reg_text_class, start_registration,
+)
+from render import render_passport
+from territories import do_siege, do_terr
+from ui import back_kb, btn, CbMsg, kb, panel, safe_edit, say
+from utils import is_group
+from wheel import do_wheel
+
+
+async def handle_cb(cq: CallbackQuery, bot: Bot):
+    data = cq.data or ""
+    parts = data.split(":")
+    if len(parts) < 2 or not parts[-1].lstrip("-").isdigit():
+        await cq.answer()
+        return
+    if not isinstance(cq.message, Message):
+        await cq.answer("این پنل قدیمی شده؛ بنویس «زندگی من» تا دوباره باز بشه.", show_alert=True)
+        return
+    kind, owner = parts[0], int(parts[-1])
+    user = cq.from_user
+    if owner and user.id != owner:
+        await cq.answer("این پنل مال یکی دیگه‌ست 🙂 پنل خودت رو با نوشتن «زندگی من» باز کن.", show_alert=True)
+        return
+    await store.touch(user)
+    doc = await store.get(user.id)
+    if doc and doc.get("banned"):
+        await cq.answer("تو بن شدی. ایزدبانو دیگه تو رو نمی‌بینه؛ برای ما وجود نداری. 🚫", show_alert=True)
+        return
+    m = CbMsg(cq, bot)
+    uid = user.id
+    registered = bool(doc and doc.get("registered"))
+
+    # ── ادمین
+    if kind == "adm":
+        if not is_admin(uid):
+            await cq.answer("این بخش فقط برای ادمین‌هاست. 🚫", show_alert=True)
+            return
+        await cq.answer()
+        act = parts[1]
+        if act == "stats":
+            await m.reply(await admin_stats())
+        elif act == "health":
+            await m.reply(await admin_health())
+        elif act == "clean":
+            await m.reply(await admin_clean())
+        elif act == "help":
+            await m.reply(panel("red", "🛠", "فرمان‌های ادمین", ADMIN_HELP))
+        return
+
+    # ── ثبت‌نام
+    if kind == "reg":
+        act = parts[1]
+        if act == "go":
+            if registered:
+                await cq.answer("قرارداد رو قبلاً امضا کردی؛ دیگه راه برگشتی نیست. 😈", show_alert=True)
+                return
+            await cq.answer()
+            await start_registration(m)
+        elif registered:
+            await cq.answer("ثبت‌نامت قبلاً انجام شده. 👍", show_alert=True)
+        elif act == "sign":
+            await cq.answer("قلم رو بردار… 🩸")
+            await safe_edit(cq.message, reg_text_class(), reg_kb_class(uid))
+        elif act == "cls" and len(parts) >= 4 and parts[2] in CLASSES:
+            await cq.answer(CLASSES[parts[2]]["name"])
+            await safe_edit(cq.message, reg_text_boon(parts[2]), reg_kb_boon(parts[2], uid))
+        elif act == "boon" and len(parts) >= 5 and parts[2] in CLASSES and parts[3] in BOONS:
+            ndoc = await finish_registration(user, parts[2], parts[3])
+            if not ndoc:
+                await cq.answer("قبلاً ثبت‌نام شدی.", show_alert=True)
+                return
+            await cq.answer("قرارداد امضا شد! 🎉")
+            await safe_edit(cq.message, reg_done_text(ndoc, parts[2], parts[3]),
+                            kb([btn("🌙 باز کردن پنل‌ها", f"m:main:{uid}", "green")],
+                               [btn("🌍 اولین ماجراجویی", f"x:forest:{uid}", "blue")]))
+        elif act == "run":
+            await cq.answer("فرار؟ 🏃")
+            await safe_edit(cq.message, panel("red", "🏃", "فرار ناموفق", [
+                "💅 «فرار؟ از من؟ هیچ‌کس از دروازه‌ی من فرار نکرده. فرارت رو یه ثانیه تماشا کردم و خمیازه کشیدم. هر وقت خسته شدی، برگرد و التماس کن.»",
+                "هر وقت آماده بودی، دکمه‌ی پایین رو بزن یا بنویس «<b>ثبت‌نام</b>».",
+            ]), kb([btn("🩸 خیله‌خب، امضا می‌کنم", f"reg:go:{uid}", "green")]))
+        else:
+            await cq.answer()
+        return
+
+    # ── بدون ثبت‌نام فقط راهنما
+    if not registered and not (kind == "m" and parts[1] == "help"):
+        await cq.answer("اول ثبت‌نام کن، بعد بیا! 🙂", show_alert=True)
+        await reg_prompt(m)
+        return
+
+    await cq.answer()
+
+    if kind == "x" and parts[1] in BIOMES:
+        await do_explore(m, parts[1])
+    elif kind == "n" and parts[1] in NPCS:
+        await do_npc(m, parts[1])
+    elif kind == "duelacc":
+        if not await do_duel_accept(m):
+            await say(m, "این دوئل تموم شده یا برای تو نیست.", "⚔️", "دوئل", "orange")
+    elif kind == "buy":
+        if not await do_buy(m):
+            await say(m, "دلال رفت و بازار سیاه فعلاً بسته‌ست. بعداً دوباره سر بزن. 🕶", "🕶", "بازار سیاه", "black")
+    elif kind == "loot":
+        await claim_drop(m, parts[1], notify_fail=True)
+    elif kind == "sg" and parts[1] in TERRITORIES:
+        await do_siege(m, parts[1])
+    elif kind == "raid":
+        if parts[1] == "hit":
+            if not await do_raid_hit(m):
+                await say(m, "الان باسی نیست. برای احضار بنویس «احضار باس». 🐉", "🐉", "باس", "red")
+        elif parts[1] == "call":
+            await do_boss_call(m, bot)
+        else:
+            await do_boss_status(m)
+    elif kind == "mar":
+        await marriage_answer(m, parts[1] == "yes", parts[2])
+    elif kind == "m":
+        act = parts[1]
+        if act == "main":
+            await safe_edit(cq.message, hub_text(doc), hub_kb(uid))
+        elif act == "go":
+            rows = [[btn(f"{b['icon']} {b['name']}", f"x:{k}:{uid}", b["color"])] for k, b in BIOMES.items()]
+            await safe_edit(cq.message, panel("green", "🌍", "کجا بریم؟", [
+                "👇 یه مکان انتخاب کن تا ماجراجویی شروع بشه.\n💅 «هر جا بری، یا بدبخت میشی یا می‌میری. هر دو برای من سرگرم‌کننده‌ست.»",
+            ]), kb(*rows, back_kb(uid)))
+        elif act == "npc":
+            rows = [[btn(f"{n['icon']} {n['name']}", f"n:{k}:{uid}", n["color"])] for k, n in NPCS.items()]
+            await safe_edit(cq.message, panel("purple", "🧙", "با کی حرف بزنیم؟", [
+                "💡 NPCها فقط تو «شهر» هستن. اول به شهر برو، بعد باهاشون حرف بزن. 🏰",
+            ]), kb(*rows, back_kb(uid)))
+        elif act == "pass":
+            await m.reply(render_passport(doc), reply_markup=kb(back_kb(uid)))
+        elif act == "inv":
+            await send_inventory(m, doc)
+        elif act == "wheel":
+            await do_wheel(m)
+        elif act == "guild":
+            await do_guild_me(m)
+        elif act == "war":
+            await do_guild_war(m)
+        elif act == "board":
+            await do_board(m)
+        elif act == "market":
+            if is_group(m):
+                await m.reply(await drop_offer(m.chat.id), reply_markup=kb([btn("💸 میخرم!", "buy:0:0", "green")]))
+            else:
+                await say(m, "بازار سیاه فقط تو گروه‌ها باز میشه. ربات رو به گروهت اضافه کن و اونجا امتحان کن. 🕶", "🕶", "بازار سیاه", "black")
+        elif act == "quest":
+            await do_quests(m)
+        elif act == "terr":
+            await do_terr(m)
+        elif act == "boss":
+            await do_boss_status(m)
+        elif act == "marry":
+            await do_marry_info(m, doc)
+        elif act == "help":
+            await m.reply(SMALL_TALK_HELP, reply_markup=help_kb(uid) if registered else None)
+        elif act == "die":
+            await safe_edit(cq.message, panel("red", "☠️", "مرگ داوطلبانه؟", [
+                "💅 «خودت می‌خوای بمیری؟ بدون کامیون، بدون رامن؟ بی‌خلاقیت‌ترین مرگی که تو این ده سال دیدم. ولی قبوله؛ بیا.»",
+                "ℹ️ بعد از مرگ دوباره متولد میشی: فرم، دنیا و مهارت جدید می‌گیری و نرخ بقات تصادفی میشه.",
+            ]), kb([btn("☠️ آره، بفرست", f"m:die2:{uid}", "red"), btn("🔙 نه، پشیمون شدم", f"m:main:{uid}", "green")]))
+        elif act == "die2":
+            await do_self_death(m)
+        elif act == "divorce":
+            await do_divorce(m)
