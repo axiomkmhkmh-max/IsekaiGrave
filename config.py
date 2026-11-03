@@ -17,6 +17,10 @@ MONGO_URI = os.getenv("MONGO_URI")
 DB_NAME = os.getenv("MONGO_DB_NAME", "isekai_grave")
 RANDOM_DROP_CHANCE = float(os.getenv("RANDOM_DROP_CHANCE", "0.02"))
 
+# 📡 کانال لاگ: همه‌ی کارهای بازیکن‌ها اینجا میره (خالی = خاموش). ربات باید ادمینِ کانال باشه.
+LOG_CHANNEL = os.getenv("LOG_CHANNEL", "@isekailog").strip()
+LOG_NAV = os.getenv("LOG_NAV", "0") == "1"      # کلیک‌های ناوبریِ منو هم لاگ بشن؟
+
 # آیدی‌های ادمین (با کاما جدا بشن، مثلاً: "123456789,987654321")
 ADMIN_IDS = [int(x.strip()) for x in os.getenv("ADMIN_USER_IDS", "").split(",") if x.strip().isdigit()]
 HERALD_CHANCE = 0.04

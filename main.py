@@ -8,6 +8,8 @@ ENV:
   MONGO_DB_NAME       (optional, default: isekai_grave)
   RANDOM_DROP_CHANCE  (optional, default: 0.02)   شانس بازار سیاه‌ی تصادفی
   ADMIN_USER_IDS      (optional) آیدی عددی ادمین‌ها با کاما: "123456789,987654321"
+  LOG_CHANNEL         (optional, default: @isekailog) کانال لاگِ کارهای بازیکن‌ها؛ ربات باید ادمین کانال باشه. خالی = خاموش
+  LOG_NAV             (optional, default: 0) 1 = کلیک‌های ناوبری منو هم لاگ بشه
 
 نکته: از BotFather گزینه‌ی Group Privacy رو Disable کن تا ربات پیام‌های عادی گروه رو ببینه.
 
@@ -27,6 +29,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from commands import setup_commands
 from config import BOT_TOKEN, DB_NAME, log, MONGO_URI, runtime
 from database import store
+import logchannel
 from handlers import router
 
 
@@ -45,7 +48,11 @@ async def main():
     dp.include_router(router)
     await setup_commands(bot)
     await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+    await logchannel.start(bot)
+    try:
+        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+    finally:
+        await logchannel.stop()
 
 
 if __name__ == "__main__":
