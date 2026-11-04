@@ -86,7 +86,7 @@ async def finish_registration(user: User, cls_key: str, boon_key: str) -> Option
     elif boon_key == "xp":
         await grant(user.id, xp=100)
     else:
-        item = f"👑 {random.choice(['تاجِ فراموش‌شده‌ی آخرالزمان', 'شمشیرِ بی‌نامِ دروازه‌ی آخر', 'حلقه‌ی پایانِ همه‌چیز'])} ‹افسانه‌ای›"
+        item = f"🔗 {random.choice(['تاجِ فراموش‌شده‌ی آخرالزمان', 'شمشیرِ بی‌نامِ دروازه‌ی آخر', 'حلقه‌ی پایانِ همه‌چیز'])} ‹پیمان‌دار›"   # 🔗 روح‌پیوند: قابل تجهیز، غیرقابل فروش
         await grant(user.id, item=item)
     return await store.get(user.id)
 

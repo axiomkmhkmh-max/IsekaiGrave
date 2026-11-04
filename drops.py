@@ -70,7 +70,7 @@ async def drop_timer(bot: Bot, chat_id: int, did, ttl: int, kind: str):
             loss = random.randint(10, 22)
             await adjust_survival(uid, -loss)
             await store.users.update_one({"user_id": uid, "gold": {"$gte": 20}}, {"$inc": {"gold": -20}})
-            lines.append(f"🩸 <a href=\"tg://user?id={uid}\">{esc(name)}</a> تو محدوده بود: −{loss}٪ بقا و −۲۰ طلا")
+            lines.append(f"🩸 <a href=\"tg://user?id={uid}\">{esc(name)}</a> تو محدوده بود: −{loss}٪ بقا و −۲۰ GS")
         if not victims:
             lines.append("خوشبختانه کسی نزدیکش نبود… فقط یه گربه، که فرار کرد. 🐈")
         await bot.send_message(chat_id, panel("red", "💥", "انفجار!", lines,
@@ -99,13 +99,13 @@ async def claim_drop(m, want: str, notify_fail: bool = False) -> bool:
             await store.users.update_one({"user_id": uid, "gold": {"$gte": 20}}, {"$inc": {"gold": -20}})
             await m.reply(panel("red", "👅", "میمیک!", [
                 f"{name} در صندوق رو باز کرد… و صندوق اونو گاز گرفت! 🦷",
-                f"🩸 −{loss}٪ بقا و −۲۰ طلا",
+                f"🩸 −{loss}٪ بقا و −۲۰ GS",
             ], "💅 <i>«صندوق‌ها گاز می‌گیرن؛ مثل من. حالا فهمیدی چرا نباید به همه‌چی اعتماد کنی؟»</i>"))
         else:
             gold = gold_bonus(doc, random.randint(40, 120))
             item, _, _ = roll_item(BLACK_MARKET_ITEMS)
             d2, lv = await grant(uid, gold=gold, xp=random.randint(15, 30), item=item)
-            lines = [f"{name} صندوق رو باز کرد!", f"🪙 +{gold} طلا", f"🎁 {esc(item)}"]
+            lines = [f"{name} صندوق رو باز کرد!", f"🪙 +{gold} GS", f"🎁 {esc(item)}"]
             if lv:
                 lines.append(f"🆙 لول‌آپ! سطح {d2.get('level', 1)}")
             await m.reply(panel("yellow", "🎁", "غنیمت!", lines, "💅 <i>«شانس آوردی. دفعه‌ی بعد شانس یادش میره سراغت بیاد.»</i>"))
@@ -114,7 +114,7 @@ async def claim_drop(m, want: str, notify_fail: bool = False) -> bool:
         await grant(uid, gold=gold, xp=30)
         await m.reply(panel("green", "✂️", "بمب خنثی شد!", [
             f"{name} سیم قرمز رو بریده… و سیم قرمز هم همون سیم درست بود! 😮‍💨",
-            f"🪙 +{gold} طلا و ۳۰ XP — جایزه‌ی قهرمانی",
+            f"🪙 +{gold} GS و ۳۰ XP — جایزه‌ی قهرمانی",
         ], "💅 <i>«…باشه. این بار شجاع بودی. دفعه‌ی بعد جا بزنی، خودم سیم‌هات رو می‌برم.»</i>"))
     await quest_progress(m, "chest")
     return True

@@ -31,7 +31,7 @@ from intents import (
     ACCEPT_RE, ADMIN_BAN_RE, ADMIN_BROADCAST_RE, ADMIN_CLEAN_RE, ADMIN_HEALTH_RE, ADMIN_KILL_RE,
     ADMIN_PANEL_RE, ADMIN_STATS_RE, ADMIN_UNBAN_RE, BLESS_RE, BOARD_RE, BOSS_CALL_RE, BOSS_HIT_RE,
     BOSS_STATUS_RE, BUY_RE, CAFE_RE, CURSE_RE, DEATH_RE, DEFUSE_RE, DISTRESS_RE, DIVORCE_RE, DUEL_RE,
-    EXEC_RE, GUILD_CREATE_RE, GUILD_INVITE_RE, GUILD_JOIN_RE, GUILD_LEAVE_RE, GUILD_ME_RE,
+    EXEC_RE, DONATE_RE, EQUIP_RE, EXCH_RE, FORGE_RE, FORT_RE, GS_RE, SELL_RE, GUILD_CREATE_RE, GUILD_INVITE_RE, GUILD_JOIN_RE, GUILD_LEAVE_RE, GUILD_ME_RE,
     GUILD_WAR_RE, HELP_RE, INV_RE, INVITE_RE, MARKET_RE, MARRY_ACCEPT_RE, MARRY_DECLINE_RE,
     MARRY_RE, MENU_RE, NPC_RE, OPEN_RE, OPT_IN_RE, OPT_OUT_RE, PASSPORT_RE, QUEST_RE, REG_RE,
     REPLY_EXEC_RE, SIEGE_RE, STROLL_RE, TERR_RE, TITLES_RE, TRADE_RE, TRAVEL_RE, WHEEL_RE,
@@ -71,6 +71,13 @@ _TEXT_RULES = [
     (ADMIN_BROADCAST_RE, "🛠 ادمین: پیام سراسری", "full", False),
     (EXEC_RE, "⚰️ دستور اعدام (@یوزرنیم)", "search", False),
     (REPLY_EXEC_RE, "⚰️ دستور اعدام (ریپلای)", "full", False),
+    (EXCH_RE, "🪦 بازار روح", "full", False),
+    (SELL_RE, "🏷 فروش در بازار روح", "full", False),
+    (FORGE_RE, "🔥 کوره‌ی روح", "full", False),
+    (EQUIP_RE, "⚔️ تجهیز آیتم", "full", False),
+    (GS_RE, "🪙 موجودی GS", "full", False),
+    (DONATE_RE, "💰 اهدا به خزانه‌ی گیلد", "full", False),
+    (FORT_RE, "🏯 تقویت دژ", "full", False),
     (DUEL_RE, "⚔️ چالش دوئل", "full", False),
     (ACCEPT_RE, "🥊 قبول دوئل", "search", False),
     (CURSE_RE, "🩸 نفرین", "search", False),
@@ -119,7 +126,7 @@ _M_LABELS = {
     "guild": ("🏰 گیلد من", False), "war": ("⚔️ جنگ گیلدها", False), "board": ("🏆 لیدربرد", False),
     "market": ("🕶 بازار سیاه", False), "quest": ("📜 ماموریت‌ها", False), "terr": ("🗺 قلمروها", False),
     "boss": ("🐉 وضعیت باس", False), "marry": ("💍 پیوند", False), "die2": ("☠️ مرگ داوطلبانه (تأیید)", False),
-    "divorce": ("💔 طلاق", False),
+    "divorce": ("💔 طلاق", False), "exch": ("🪦 بازار روح", False), "forge": ("🔥 کوره‌ی روح", False), "gs": ("🪙 موجودی GS", False),
 }
 
 

@@ -7,7 +7,8 @@ from typing import Optional
 
 from aiogram.types import Message
 
-from config import EXPLORE_COOLDOWN
+from config import EXPLORE_COOLDOWN, GS
+from economy import terr_perks
 from content import BIOMES, gline, LORE_LINES, RARITIES, roll_item
 from database import store
 from menus import after_death_kb, after_explore_kb
@@ -40,6 +41,9 @@ async def do_explore(m: Message, key: str):
 
     B = BIOMES[key]
     doc = await store.get(uid)
+    perks = await terr_perks(doc)      # 🎖 مزیتِ قلمروهای گیلد: بندر (+۱۰٪ GS) و جنگل (+۲۰٪ شفا)
+    def gain(g: int) -> int:
+        return int(gold_bonus(doc, g) * (1.1 if "port" in perks else 1))
     await store.users.update_one({"user_id": uid}, {"$set": {"location": key}, "$inc": {"trips": 1}})
     kinds = list(B["w"].keys())
     kind = random.choices(kinds, weights=[B["w"][k] for k in kinds])[0]
@@ -50,11 +54,11 @@ async def do_explore(m: Message, key: str):
 
     if kind == "find":
         item, idx, val = roll_item(B["items"])
-        gold = gold_bonus(doc, random.randint(5, 25) + val)
+        gold = gain(random.randint(5, 25) + val)
         cursed = idx == len(RARITIES) - 1
         doc, leveled = await grant(uid, gold=gold, xp=random.randint(8, 18), item=item,
                                    survival=-5 if cursed else 0)
-        lines.append(f"✨ <b>گنج پیدا کردی!</b>\n🎁 {esc(item)}\n🪙 +{gold} طلا")
+        lines.append(f"✨ <b>گنج پیدا کردی!</b>\n🎁 {esc(item)}\n🪙 +{gold} {GS}")
         if cursed:
             lines.append("🩸 آیتم نفرین‌شده بود! −۵٪ بقا. ایزدبانو خندید: «اپس. لایقش بودی.»")
     elif kind == "monster":
@@ -63,9 +67,9 @@ async def do_explore(m: Message, key: str):
         theirs = strength + random.randint(0, 25)
         lines.append(f"👹 <b>{esc(mname)}</b> سر راهت سبز شد! (قدرت {strength})")
         if mine >= theirs:
-            g = gold_bonus(doc, random.randint(8, 30))
+            g = gain(random.randint(8, 30))
             doc, leveled = await grant(uid, gold=g, xp=random.randint(18, 35))
-            lines.append(f"⚔️ <b>پیروز شدی!</b> هیولا فرار کرد و یه کیسه‌ی کوچیک جا گذاشت.\n🪙 +{g} طلا")
+            lines.append(f"⚔️ <b>پیروز شدی!</b> هیولا فرار کرد و یه کیسه‌ی کوچیک جا گذاشت.\n🪙 +{g} {GS}")
             if random.random() < 0.3:
                 item, _, _ = roll_item(B["items"])
                 doc, _ = await grant(uid, item=item)
@@ -77,7 +81,7 @@ async def do_explore(m: Message, key: str):
             if doc.get("survival_rate", 100) <= 2:
                 died = True
     elif kind == "heal":
-        h = heal_bonus(doc, random.randint(8, 18))
+        h = heal_bonus(doc, int(random.randint(8, 18) * (1.2 if "forest" in perks else 1)))
         doc, leveled = await grant(uid, xp=6, survival=h)
         lines.append(f"💚 یه چشمه‌ی شفابخش پیدا کردی و ازش خوردی. +{h}٪ بقا.")
     elif kind == "trap":
@@ -100,7 +104,7 @@ async def do_explore(m: Message, key: str):
         doc, lv2 = await grant(uid, gold=reward, xp=30)
         leveled = leveled or lv2
         await store.users.update_one({"user_id": uid}, {"$set": {"quest": None}})
-        lines.append(f"📜 <b>ماموریت پیرمرد انجام شد!</b> 🪙 +{reward} طلا و ۳۰ XP. «آفرین! کارت عالی بود.»")
+        lines.append(f"📜 <b>ماموریت پیرمرد انجام شد!</b> 🪙 +{reward} {GS} و ۳۰ XP. «آفرین! کارت عالی بود.»")
 
     # 👑 درآمد قلمرو + امتیاز هفتگی گیلد
     if not died and doc.get("guild"):

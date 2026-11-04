@@ -28,9 +28,13 @@ from motor.motor_asyncio import AsyncIOMotorClient
 
 from commands import setup_commands
 from config import BOT_TOKEN, DB_NAME, log, MONGO_URI, runtime
+from battle import recover_battles
 from database import store
+from exchange import recover_exchange
 import logchannel
 from handlers import router
+from territories import recover_sieges
+from updates import notify_if_updated
 
 
 async def main():
@@ -49,6 +53,10 @@ async def main():
     await setup_commands(bot)
     await bot.delete_webhook(drop_pending_updates=True)
     await logchannel.start(bot)
+    await recover_exchange(bot)     # 🪦 معاملاتِ نیمه‌کاره (کرش) تمیز میشن
+    await recover_battles(bot)      # ⚔️ نبردهای در جریان ادامه پیدا می‌کنن
+    await recover_sieges(bot)       # 🏰 محاصره‌های باز نتیجه می‌گیرن
+    await notify_if_updated(bot)   # اگه BOT_VERSION عوض شده باشه، به پلیرها پیام آپدیت میره
     try:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:

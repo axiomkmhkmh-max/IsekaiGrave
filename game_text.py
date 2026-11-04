@@ -19,8 +19,11 @@ from death import do_distress, do_self_death
 from drops import claim_drop, spawn_drop, _last_loot, _recent_chatters
 from duels import do_duel_accept, do_duel_request
 from exploration import detect_biome, do_explore
+from exchange import exchange_home, gs_panel, sell_command
+from forge import equip_command, forge_home
 from guilds import (
-    do_guild_create, do_guild_invite, do_guild_join, do_guild_leave, do_guild_me, do_guild_war,
+    do_guild_create, do_guild_donate, do_guild_fort, do_guild_invite, do_guild_join, do_guild_leave, do_guild_me,
+    do_guild_war,
 )
 from intents import (
     ACCEPT_RE, BLESS_RE, BOARD_RE, BOSS_CALL_RE, BOSS_HIT_RE, BOSS_STATUS_RE, BUY_RE, CAFE_RE,
@@ -29,6 +32,7 @@ from intents import (
     INVITE_RE, MARKET_RE, MARRY_ACCEPT_RE, MARRY_DECLINE_RE, MARRY_RE, MENU_RE, NPC_RE, OPEN_RE,
     OPT_IN_RE, OPT_OUT_RE, PASSPORT_RE, QUEST_RE, REG_RE, REPLY_EXEC_RE, SIEGE_RE, SMALL_TALK_HELP,
     STROLL_RE, TERR_RE, TITLES_RE, TRADE_RE, TRAVEL_RE, WHEEL_RE,
+    DONATE_RE, EQUIP_RE, EXCH_RE, FORGE_RE, FORT_RE, GS_RE, SELL_RE,
 )
 from inventory import send_inventory
 from leaderboard import do_board
@@ -54,7 +58,7 @@ def looks_like_game(c: str, n: str, m: Message) -> bool:
     full = (MENU_RE, QUEST_RE, TERR_RE, SIEGE_RE, MARRY_RE, MARRY_ACCEPT_RE, MARRY_DECLINE_RE, DIVORCE_RE,
             BOSS_CALL_RE, BOSS_HIT_RE, BOSS_STATUS_RE, DEATH_RE, PASSPORT_RE, TITLES_RE, INV_RE, INVITE_RE,
             STROLL_RE, DUEL_RE, GUILD_CREATE_RE, GUILD_JOIN_RE, GUILD_WAR_RE, GUILD_ME_RE, GUILD_LEAVE_RE,
-            GUILD_INVITE_RE)
+            GUILD_INVITE_RE, EXCH_RE, SELL_RE, FORGE_RE, EQUIP_RE, GS_RE, DONATE_RE, FORT_RE)
     srch = (WHEEL_RE, BOARD_RE, CAFE_RE, NPC_RE, MARKET_RE, ACCEPT_RE, TRADE_RE)
     if any(r.fullmatch(c) for r in full) or any(r.search(c) for r in srch):
         return True
@@ -137,6 +141,29 @@ async def handle_text(m: Message, bot: Bot):
     if BUY_RE.fullmatch(c) and await do_buy(m):
         return
     if TRADE_RE.search(c) and await do_trade(m):
+        return
+
+    # 🪙🪦🔥 اقتصادِ GS، بازار روح و کوره
+    if EXCH_RE.fullmatch(c):
+        await exchange_home(m, bot)
+        return
+    if sm := SELL_RE.fullmatch(c):
+        await sell_command(m, int(sm.group(1)), int(sm.group(2)))
+        return
+    if FORGE_RE.fullmatch(c):
+        await forge_home(m)
+        return
+    if sm := EQUIP_RE.fullmatch(c):
+        await equip_command(m, int(sm.group(1)))
+        return
+    if GS_RE.fullmatch(c):
+        await gs_panel(m)
+        return
+    if sm := DONATE_RE.fullmatch(c):
+        await do_guild_donate(m, int(sm.group(2)))
+        return
+    if FORT_RE.fullmatch(c):
+        await do_guild_fort(m)
         return
 
     # ۵) گیلد

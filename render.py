@@ -2,9 +2,11 @@
 
 import random
 
+from config import GS_DAILY_SOFT_CAP
 from content import BIOMES, CLASSES, GODDESS_JUDGE, LAST_WORDS, SCENES
+from rules import echo_charges, gear_bonus
 from ui import hp_bar, panel, xp_bar
-from utils import esc
+from utils import day_key, esc
 
 
 def rate_comment(r: int) -> str:
@@ -31,11 +33,14 @@ def display(doc: dict, link: bool = False) -> str:
 
 def stat_lines(doc: dict) -> list:
     r = doc.get("survival_rate", 0)
-    return [
+    out = [
         f"💚 بقا: <b>{r}٪</b> {hp_bar(r)}",
         f"⭐ سطح <b>{doc.get('level', 1)}</b> {xp_bar(int(doc.get('xp', 0)))}",
-        f"🪙 طلا: <b>{doc.get('gold', 0)}</b>",
+        f"🪙 GS: <b>{doc.get('gold', 0)}</b>",
     ]
+    if doc.get("gs_day") == day_key() and int(doc.get("gs_earned", 0)) >= GS_DAILY_SOFT_CAP:
+        out.append("⏳ سقفِ درآمدِ امروز رسید؛ تا فردا GS کمتری می‌گیری.")
+    return out
 
 
 def render_rebirth(doc: dict, new_titles: list) -> str:
@@ -47,9 +52,11 @@ def render_rebirth(doc: dict, new_titles: list) -> str:
         f"🎁 چیت‌اسکیل: {esc(doc['cheat_skill'])}",
         f"💀 نرخ بقا: <b>{r}٪</b> {hp_bar(r)}",
         f"☠️ تعداد مرگ: {doc['death_count']}",
+        f"🔁 پژواکِ بازتولد: <b>{echo_charges(int(doc['death_count']))}</b> — هر مرگ تو نبرد بهت قدرت می‌ده، نه ضعف!",
+        "🕯 هاله‌ی بازتولد: ۳ نبردِ بعدی با ۲ روحِ شارژشده شروع میشه.",
     ]
     if doc.get("_bond"):
-        lines.append(f"💍 پیوندِ ایسکایی! {esc(doc['_bond'])} هم از این مرگ زخمی شد (−۶٪ بقا، −۱۰ طلا).")
+        lines.append(f"💍 پیوندِ ایسکایی! {esc(doc['_bond'])} هم از این مرگ زخمی شد (−۶٪ بقا، −۱۰ GS).")
     s = panel(color, "🔮", "بازتولد موفق!", lines, rate_comment(r))
     if new_titles:
         s += "\n\n🏷 <b>لقب جدید ثبت شد:</b> " + "، ".join(f"«{esc(t)}»" for t in new_titles)
@@ -87,6 +94,7 @@ def render_passport(doc: dict) -> str:
         "┈┈┈┈┈┈┈┈┈┈",
         f"☠️ مرگ‌ها: {doc.get('death_count', 0)} | 😈 نفرین‌ها: {doc.get('curses_received', 0)} | 🙏 دعاها: {doc.get('blessings_received', 0)}",
         f"⚔️ دوئل: {doc.get('wins', 0)} برد / {doc.get('losses', 0)} باخت",
+        f"🔁 پژواک: {echo_charges(int(doc.get('death_count', 0)))} | 🗡 روح‌سلاح: " + (f"{esc((doc.get('equip') or {}).get('item'))} (+{gear_bonus((doc.get('equip') or {}).get('item'))})" if (doc.get('equip') or {}).get('item') else "—"),
     ]
     foot = f"🎒 کوله‌پشتی: {esc('، '.join(inv[-3:])) if inv else 'خالی'}"
     if not doc.get("death_count"):

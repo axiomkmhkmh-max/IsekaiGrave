@@ -23,6 +23,17 @@ LOG_NAV = os.getenv("LOG_NAV", "0") == "1"      # کلیک‌های ناوبری
 
 # آیدی‌های ادمین (با کاما جدا بشن، مثلاً: "123456789,987654321")
 ADMIN_IDS = [int(x.strip()) for x in os.getenv("ADMIN_USER_IDS", "").split(",") if x.strip().isdigit()]
+# 🔄 اطلاع‌رسانی آپدیت: هر بار این عدد رو بالا ببری و دیپلوی کنی، همه‌ی پلیرها پیام «دوباره /start بزن» می‌گیرن.
+BOT_VERSION = "3.0"
+UPDATE_NOTES = [
+    "🪙 ارز جدید: GRAVE SIGIL (GS) — موجودیِ قبلیت همون‌طور سر جاشه",
+    "🪦 بازار روح: آیتم‌هات رو به بازیکن‌های دیگه بفروش یا بخر",
+    "⚔️ نبردِ رشته‌ی سرنوشت: دوئل و باس حالا تاکتیکیه (روح، سپر، بازتولد)",
+    "🏰 محاصره‌ی قلمروها با شرکتِ اعضا + مزایای واقعی برای گیلدِ مالک",
+    "🔥 کوره‌ی روح: تجهیز، ارتقا و ادغام آیتم‌ها",
+]
+NOTIFY_ON_UPDATE = os.getenv("NOTIFY_ON_UPDATE", "1") == "1"   # برای خاموش کردن: 0
+
 HERALD_CHANCE = 0.04
 LOOT_CHANCE = 0.03             # صندوق گنج / بمب ساعتی‌ی تصادفی در گروه
 RAID_SPAWN_CHANCE = 0.004      # ظهور خودکار باس
@@ -37,7 +48,7 @@ WHEEL_COOLDOWN = 24 * 3600     # گردونه‌ی شانس
 DUEL_TTL = 3 * 60              # مهلت قبول دوئل
 GUILD_WAR_COOLDOWN = 30 * 60
 SIEGE_COOLDOWN = 30 * 60
-GUILD_COST = 60                # هزینه‌ی ساخت گیلد (طلا)
+GUILD_COST = 60                # هزینه‌ی ساخت گیلد (GS)
 GUILD_MAX_MEMBERS = 30
 START_GOLD = 100
 LOOT_TTL = 3 * 60
@@ -48,6 +59,52 @@ RAID_HIT_COOLDOWN = 12
 PROPOSAL_TTL = 5 * 60
 REG_PROMPT_COOLDOWN = 45
 BOT_STARTED = time.time()
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+
+
+# ───────────────────────────── 🪙 GRAVE SIGIL (GS) ─────────────────────────────
+# ارزِ داخلیِ بازی (نه کریپتو). برای حفظ موجودیِ بازیکن‌ها، فیلدِ دیتابیس همون «gold» مونده و فقط نمایشش GS شده.
+GS = "GS"
+GS_NAME = "GRAVE SIGIL"
+INV_CAP = 15                                         # ظرفیت کوله‌پشتی (همون قبلی)
+GS_DAILY_SOFT_CAP = _env_int("GS_DAILY_SOFT_CAP", 800)    # درآمد روزانه تا این عدد کامل حساب میشه
+GS_DAILY_HARD_CAP = _env_int("GS_DAILY_HARD_CAP", 2000)   # بعد از این عدد، درآمدِ بازی صفر میشه
+GS_SOFT_RATE = 0.3                                   # بین سقف نرم و سخت فقط ۳۰٪ می‌رسه
+WEEKLY_TITHE_ABOVE = _env_int("WEEKLY_TITHE_ABOVE", 5000)  # عُشرِ هفتگیِ ایزدبانو: فقط روی موجودیِ بالای این عدد
+WEEKLY_TITHE_PCT = _env_int("WEEKLY_TITHE_PCT", 2)         # ۰ = خاموش
+
+# 🪦 بازار روح (Grave Exchange)
+EXCHANGE_FEE_PCT = _env_int("EXCHANGE_FEE_PCT", 8)         # کارمزد فروش (سوخته میشه)
+EXCHANGE_FEE_PCT_CAPITAL = max(0, EXCHANGE_FEE_PCT - 3)    # مالکانِ «پایتخت درخشان»
+EXCHANGE_MAX_LISTINGS = _env_int("EXCHANGE_MAX_LISTINGS", 5)
+EXCHANGE_MIN_LEVEL = _env_int("EXCHANGE_MIN_LEVEL", 2)
+EXCHANGE_MAX_PRICE = 50000
+LISTING_TTL = 72 * 3600
+EXCHANGE_PAGE = 5
+
+# ⚔️ نبرد
+TURN_SECONDS = 75
+BATTLE_STALE = 30 * 60
+DUEL_REWARD_COOLDOWN = 3600      # تکرارِ دوئل با همون حریف تو این مدت، GS نمی‌ده
+WITCH_RESTORE_COST = 45
+
+# 🏰 جنگ قلمروها
+SIEGE_WINDOW = _env_int("SIEGE_WINDOW_MIN", 10) * 60
+SIEGE_COST = 80                  # از خزانه‌ی گیلد
+SIEGE_MIN_JOIN = 2
+SIEGE_PROTECT = 2 * 3600         # بعد از فتح، قلمرو مدتی محافظت میشه
+SIEGE_MIN_SURVIVAL = 15
+WAR_ALLIN_COST = 8               # ٪ بقا برای «تمام‌عیار»
+WAR_ALLIN_BONUS = 1.4
+WAR_CHEST_PLAYER_CAP = 70
+TERR_TRIBUTE = 120               # GS هفتگی به خزانه‌ی گیلدِ مالکِ هر قلمرو
+FORT_COSTS = [60, 120, 200]     # تقویت دژ تا ۳ سطح (هر سطح +۱۰٪ دفاع، فقط همین هفته)
 
 # ───────────────────────────── 📜 ماموریت‌های روزانه و هفتگی ─────────────────────────────
 IR_OFFSET = timedelta(hours=3, minutes=30)

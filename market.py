@@ -24,7 +24,7 @@ async def drop_offer(chat_id: int) -> str:
     pkey, plabel = random.choice(PRICES)
     price = random.randint(40, 150) if pkey == "gold" else None
     if price:
-        plabel = f"{price} طلا"
+        plabel = f"{price} GS"
     await store.offers.update_many({"chat_id": chat_id, "status": "open"}, {"$set": {"status": "expired"}})
     await store.offers.insert_one({
         "chat_id": chat_id, "item": item, "price_key": pkey, "price_label": plabel, "price": price,
@@ -67,7 +67,7 @@ async def do_buy(m: Message) -> bool:
     elif offer["price_key"] == "gold":
         if not await spend(uid, int(offer.get("price") or 80)):
             await reopen()
-            await say(m, f"{offer.get('price_label')} نداری! با ماجراجویی طلا جمع کن و دفعه‌ی بعد بیا. 🙂", "🕶", "بازار سیاه", "black")
+            await say(m, f"{offer.get('price_label')} نداری! با ماجراجویی GS جمع کن و دفعه‌ی بعد بیا. 🙂", "🕶", "بازار سیاه", "black")
             return True
     else:  # مرگ اجباری
         await store.users.update_one({"user_id": uid}, {"$push": {"inventory": {"$each": [offer["item"]], "$slice": -15}}})

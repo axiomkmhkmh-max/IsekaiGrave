@@ -38,12 +38,12 @@ async def do_wheel(m: Message):
             "$set": {**base_set, "survival_rate": rate, "status": status_for(rate)},
             "$inc": {"gold": gold}, "$push": {"inventory": {"$each": [item], "$slice": -15}},
         })
-        lines = ["💰 <b>جک‌پات!!</b> 🎰", f"🪙 +{gold} طلا", f"🎁 {esc(item)}", f"✨ چیت‌اسکیل: {esc(cheat)}", f"💚 بقا: <b>{rate}٪</b> {hp_bar(rate)}"]
+        lines = ["💰 <b>جک‌پات!!</b> 🎰", f"🪙 +{gold} GS", f"🎁 {esc(item)}", f"✨ چیت‌اسکیل: {esc(cheat)}", f"💚 بقا: <b>{rate}٪</b> {hp_bar(rate)}"]
         color = "yellow"
     elif roll < 0.9:
         await store.users.update_one({"user_id": uid}, {"$set": base_set, "$inc": {"gold": 40}})
         d2 = await adjust_survival(uid, 15)
-        lines = ["🙏 <b>برکت خفیف</b>", f"🪙 +۴۰ طلا", f"💚 +۱۵٪ بقا → <b>{d2['survival_rate']}٪</b> {hp_bar(d2['survival_rate'])}", f"✨ چیت‌اسکیل: {esc(cheat)}"]
+        lines = ["🙏 <b>برکت خفیف</b>", f"🪙 +۴۰ GS", f"💚 +۱۵٪ بقا → <b>{d2['survival_rate']}٪</b> {hp_bar(d2['survival_rate'])}", f"✨ چیت‌اسکیل: {esc(cheat)}"]
         color = "blue"
     else:
         rate = random.randint(1, 10)

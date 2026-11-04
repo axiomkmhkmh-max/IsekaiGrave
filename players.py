@@ -1,4 +1,4 @@
-"""منطق بازیکن: لقب‌ها، بازتولد (مرگ)، بقا، طلا/XP/آیتم و بونوس کلاس‌ها."""
+"""منطق بازیکن: لقب‌ها، بازتولد (مرگ)، بقا، GS/XP/آیتم و بونوس کلاس‌ها."""
 
 import random
 from typing import Optional
@@ -7,6 +7,7 @@ from pymongo import ReturnDocument
 
 from content import CHEATS, DEATH_TITLES, FORM_TITLE, FORMS, WORLDS
 from database import store
+from economy import burn, cap_income
 from utils import utcnow
 
 
@@ -41,6 +42,8 @@ def earned_titles(doc: dict) -> list:
         t.append("مسافرِ بی‌سرانجام")
     if doc.get("level", 1) >= 5:
         t.append("قهرمانِ نیم‌بند")
+    if doc.get("mx_sales", 0) >= 5:
+        t.append("تاجرِ بازار روح")
     return t
 
 
@@ -72,6 +75,7 @@ async def reincarnate(uid: int, forced: bool = False, chat_id: Optional[int] = N
             "$set": {
                 "form": form, "cheat_skill": random.choice(CHEATS), "world": random.choice(WORLDS),
                 "survival_rate": rate, "status": status_for(rate), "last_death_at": utcnow(),
+                "reborn": 3,   # 🕯 هاله‌ی بازتولد: ۳ نبرد بعدی با ۲ روحِ شارژشده شروع میشه
             },
             "$push": {"past_forms": {"$each": [form], "$slice": -30}},
         },
@@ -105,6 +109,9 @@ async def grant(uid: int, gold: int = 0, xp: int = 0, item: Optional[str] = None
     upd: dict = {}
     inc: dict = dict(counters or {})
     if gold:
+        if gold > 0:
+            inc["gs_earned"] = gold                       # شمارنده‌ی درآمدِ خامِ امروز (برای سقف روزانه)
+            gold = await cap_income(uid, gold)            # GS تولیدشده‌ی بازی سقف روزانه داره
         inc["gold"] = gold
     if xp:
         if xp > 0:
@@ -134,6 +141,8 @@ async def grant(uid: int, gold: int = 0, xp: int = 0, item: Optional[str] = None
 
 async def spend(uid: int, amount: int) -> bool:
     res = await store.users.update_one({"user_id": uid, "gold": {"$gte": amount}}, {"$inc": {"gold": -amount}})
+    if res.modified_count:
+        await burn(amount, "spend")     # خرجِ NPC/گیلد = GS که از چرخه خارج میشه
     return res.modified_count > 0
 
 
@@ -142,7 +151,7 @@ def cls_is(doc: Optional[dict], key: str) -> bool:
 
 
 def gold_bonus(doc: Optional[dict], g: int) -> int:
-    return int(g * 1.25) if cls_is(doc, "rogue") else g       # 🗡 دزد: ۲۵٪ طلای بیشتر
+    return int(g * 1.25) if cls_is(doc, "rogue") else g       # 🗡 دزد: ۲۵٪ GS بیشتر
 
 
 def heal_bonus(doc: Optional[dict], h: int) -> int:

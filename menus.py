@@ -20,6 +20,7 @@ def hub_kb(uid: int) -> InlineKeyboardMarkup:
         [btn("🛡 گیلد من", f"m:guild:{u}", "blue"), btn("⚔️ جنگ گیلدها", f"m:war:{u}", "red")],
         [btn("👑 قلمروها", f"m:terr:{u}", "green"), btn("🐉 باس گروه", f"m:boss:{u}", "red")],
         [btn("💍 پیوند", f"m:marry:{u}", "red"), btn("🏆 لیدربرد", f"m:board:{u}", "blue")],
+        [btn("🪦 بازار روح", f"m:exch:{u}", "green"), btn("🔥 کوره‌ی روح", f"m:forge:{u}", "red"), btn("🪙 GS", f"m:gs:{u}", "yellow")],
         [btn("🕶 بازار سیاه", f"m:market:{u}", "red"), btn("📖 راهنما", f"m:help:{u}", "blue")],
         [btn("☠️ مرگ داوطلبانه", f"m:die:{u}", "red")],
     )

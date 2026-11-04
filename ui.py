@@ -91,3 +91,15 @@ async def safe_edit(msg, text: str, markup: Optional[InlineKeyboardMarkup] = Non
 
 def back_kb(uid: int) -> list:
     return [btn("🔙 برگشت به منو", f"m:main:{uid}", "blue")]
+
+
+async def show(m, text: str, markup: Optional[InlineKeyboardMarkup] = None):
+    """اگه از دکمه اومده باشیم همون پنل رو ویرایش می‌کنه (منوی تمیز)، وگرنه پیام جدید می‌فرسته."""
+    msg = getattr(m, "_msg", None)
+    if msg is not None:
+        try:
+            await msg.edit_text(text, reply_markup=markup)
+            return
+        except Exception as e:
+            log.debug("show edit failed: %s", e)
+    return await m.reply(text, reply_markup=markup)

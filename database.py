@@ -25,6 +25,10 @@ class Store:
         self.drops = db["drops"]
         self.raids = db["raids"]
         self.territories = db["territories"]
+        self.listings = db["listings"]      # 🪦 بازار روح
+        self.ledger = db["ledger"]          # دفتر تراکنش‌های مهمِ GS
+        self.battles = db["battles"]        # ⚔️ نبردهای تاکتیکی (دوئل)
+        self.sieges = db["sieges"]          # 🏰 محاصره‌ها
 
     async def ensure_indexes(self):
         await self.users.create_index("user_id", unique=True)
@@ -39,6 +43,15 @@ class Store:
         await self.drops.create_index([("chat_id", 1), ("status", 1)])
         await self.raids.create_index([("chat_id", 1), ("status", 1)])
         await self.territories.create_index("key", unique=True)
+        await self.listings.create_index([("status", 1), ("created_at", -1)])
+        await self.listings.create_index([("seller", 1), ("status", 1)])
+        await self.listings.create_index([("buyer", 1), ("status", 1)])
+        await self.ledger.create_index([("uid", 1), ("at", -1)])
+        await self.battles.create_index([("status", 1), ("uids", 1)])
+        await self.sieges.create_index([("status", 1), ("ends_at", 1)])
+        # حداکثر یه محاصره‌ی بازِ همزمان برای هر قلمرو
+        await self.sieges.create_index("key", unique=True, partialFilterExpression={"status": "open"},
+                                       name="one_open_siege_per_territory")
         # کاربرهای قدیمی (قبل از سیستم ثبت‌نام) رو خودکار «ثبت‌شده» حساب کن
         await self.users.update_many({"registered": {"$exists": False}}, {"$set": {"registered": True, "cls": None}})
 
@@ -62,7 +75,7 @@ class Store:
                     "guild": None, "wins": 0, "losses": 0, "trips": 0,
                     "quest": None, "pending_trade": None, "last_wheel_at": None, "chats": [],
                     "registered": False, "cls": None, "pact": None, "spouse": None, "spouse_name": None,
-                    "banned": False, "quests": None,
+                    "banned": False, "quests": None, "equip": None, "reborn": 0,
                 },
             },
             upsert=True,

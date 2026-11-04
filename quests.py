@@ -76,7 +76,7 @@ async def do_quests(m):
         mark = "✅" if it["done"] else "⏳"
         return f"{mark} {esc(it['t'])}\n      ({it['have']}/{it['need']}) 🪙{it['gold']} ⭐{it['xp']}"
 
-    lines = ["👇 ماموریت‌ها رو انجام بده و طلا و XP بگیر!", "📅 <b>روزانه</b> (ریست ساعت ۰۰ به وقت ایران)"] + [row(i) for i in q.get("daily", [])]
+    lines = ["👇 ماموریت‌ها رو انجام بده و GS و XP بگیر!", "📅 <b>روزانه</b> (ریست ساعت ۰۰ به وقت ایران)"] + [row(i) for i in q.get("daily", [])]
     lines += ["┈┈┈┈┈┈┈┈┈┈", "🗓 <b>هفتگی</b>"] + [row(i) for i in q.get("weekly", [])]
     alld = all(i["done"] for i in q.get("daily", []))
     foot = "🎉 همه‌ی ماموریت‌های امروز رو انجام دادی! آفرین، فردا دوباره بیا. 🙂" if alld else "💅 <i>«ماموریت‌هات رو تموم کن. هر ماموریتِ نیمه‌کاره توهین به منه.»</i>"

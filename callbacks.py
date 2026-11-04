@@ -3,13 +3,16 @@
 from aiogram import Bot
 from aiogram.types import CallbackQuery, Message
 
+from battle import battle_cb
 from admin import admin_clean, admin_health, ADMIN_HELP, admin_stats, is_admin
 from content import BIOMES, BOONS, CLASSES, NPCS, TERRITORIES
 from database import store
 from death import do_self_death
 from drops import claim_drop
+from exchange import exchange_cb, exchange_home, gs_panel
 from duels import do_duel_accept
 from exploration import do_explore
+from forge import forge_cb, forge_home, inv_cb
 from guilds import do_guild_me, do_guild_war
 from intents import SMALL_TALK_HELP
 from inventory import send_inventory
@@ -25,7 +28,7 @@ from registration import (
     reg_text_class, start_registration,
 )
 from render import render_passport
-from territories import do_siege, do_terr
+from territories import do_siege, do_terr, siege_cb
 from ui import back_kb, btn, CbMsg, kb, panel, safe_edit, say
 from utils import is_group
 from wheel import do_wheel
@@ -53,6 +56,14 @@ async def handle_cb(cq: CallbackQuery, bot: Bot):
     m = CbMsg(cq, bot)
     uid = user.id
     registered = bool(doc and doc.get("registered"))
+
+    # ⚔️ حرکتِ نبرد: خودش جواب کلیک رو می‌ده (هشدارِ «نوبتت نیست»)
+    if kind == "bt":
+        if registered:
+            await battle_cb(cq, bot, parts)
+        else:
+            await cq.answer()
+        return
 
     # ── ادمین
     if kind == "adm":
@@ -129,9 +140,17 @@ async def handle_cb(cq: CallbackQuery, bot: Bot):
         await claim_drop(m, parts[1], notify_fail=True)
     elif kind == "sg" and parts[1] in TERRITORIES:
         await do_siege(m, parts[1])
+    elif kind == "inv":
+        await inv_cb(m, parts)
+    elif kind == "ex":
+        await exchange_cb(m, parts)
+    elif kind == "fg":
+        await forge_cb(m, parts)
+    elif kind == "war":
+        await siege_cb(m, parts)
     elif kind == "raid":
-        if parts[1] == "hit":
-            if not await do_raid_hit(m):
+        if parts[1] in ("hit", "ward", "fate"):
+            if not await do_raid_hit(m, {"hit": "strike", "ward": "ward", "fate": "fate"}[parts[1]]):
                 await say(m, "الان باسی نیست. برای احضار بنویس «احضار باس». 🐉", "🐉", "باس", "red")
         elif parts[1] == "call":
             await do_boss_call(m, bot)
@@ -157,6 +176,12 @@ async def handle_cb(cq: CallbackQuery, bot: Bot):
             await m.reply(render_passport(doc), reply_markup=kb(back_kb(uid)))
         elif act == "inv":
             await send_inventory(m, doc)
+        elif act == "exch":
+            await exchange_home(m)
+        elif act == "forge":
+            await forge_home(m)
+        elif act == "gs":
+            await gs_panel(m)
         elif act == "wheel":
             await do_wheel(m)
         elif act == "guild":

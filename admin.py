@@ -55,7 +55,13 @@ async def admin_stats() -> str:
     raids_won = await store.raids.count_documents({"status": "won"})
     d_res = await store.users.aggregate([{"$group": {"_id": None, "t": {"$sum": "$death_count"}}}]).to_list(1)
     deaths = d_res[0]["t"] if d_res else 0
+    gs_res = await store.users.aggregate([{"$group": {"_id": None, "t": {"$sum": "$gold"}}}]).to_list(1)
+    eco = await store.meta.find_one({"_id": "economy"}) or {}
+    active_l = await store.listings.count_documents({"status": "active"})
+    sold_l = await store.listings.count_documents({"status": "sold"})
     return panel("blue", "📊", "آمار حیاتی ربات", [
+        f"🪙 GS در گردش: <b>{(gs_res[0]['t'] if gs_res else 0):,}</b>  |  🔥 سوخته‌شده: <b>{int(eco.get('burned', 0)):,}</b>",
+        f"🪦 آگهی فعال: <b>{active_l}</b>  |  معامله‌ی انجام‌شده: <b>{sold_l}</b>",
         f"👤 کل کاربران: <b>{u_count}</b>  (ثبت‌نام‌شده: {reg})",
         f"🔥 فعال در ۲۴ ساعت: <b>{active}</b>",
         f"🚫 بن‌شده: <b>{banned}</b>",
