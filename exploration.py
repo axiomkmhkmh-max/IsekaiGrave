@@ -13,7 +13,7 @@ from content import BIOMES, gline, LORE_LINES, RARITIES, roll_item
 from database import store
 from menus import after_death_kb, after_explore_kb
 from npc import roll_encounter
-from players import cls_is, gold_bonus, grant, heal_bonus, refresh_titles, reincarnate
+from players import bump_streak, cls_is, gold_bonus, grant, heal_bonus, refresh_titles, reincarnate
 from quests import quest_progress
 from render import render_rebirth, render_scene, stat_lines
 from territories import terr_income
@@ -114,6 +114,11 @@ async def do_explore(m: Message, key: str):
             await grant(uid, gold=inc)
             lines.append(f"👑 درآمد قلمروهای گیلد: 🪙 +{inc}")
         await add_guild_pts(doc.get("guild"), 1)
+
+    if not died:
+        sl = await bump_streak(doc)
+        if sl:
+            lines.append(sl)
 
     if leveled:
         lines.append(f"🆙 <b>تبریک! سطحت بالا رفت!</b> حالا سطح {doc.get('level', 1)} هستی. 🎉")

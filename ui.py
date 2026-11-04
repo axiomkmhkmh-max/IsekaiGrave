@@ -5,7 +5,9 @@ from typing import Optional
 from aiogram import Bot
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
 
-from config import log
+from urllib.parse import quote
+
+from config import log, runtime
 from content import GODDESS_NAME
 from utils import esc
 
@@ -26,6 +28,12 @@ def btn(text: str, data: Optional[str] = None, color: Optional[str] = None, url:
     if st:
         kw["style"] = st
     return InlineKeyboardButton(**kw)
+
+
+def share_btn(uid: int, text: str, label: str = "📤 بفرست برای دوستات"):
+    """دکمه‌ی اشتراک‌گذاری: پیام آماده + لینک دعوتِ اختصاصی؛ هر مرگِ خنده‌دار یه تبلیغه."""
+    link = f"https://t.me/{runtime.bot_username}?start=ref_{uid}"
+    return InlineKeyboardButton(text=label, url=f"https://t.me/share/url?url={quote(link, safe='')}&text={quote(text)}")
 
 
 def kb(*rows) -> InlineKeyboardMarkup:

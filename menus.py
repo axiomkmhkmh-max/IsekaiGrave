@@ -7,7 +7,7 @@ from aiogram.types import InlineKeyboardMarkup
 from content import gline
 from database import store
 from render import class_label, stat_lines
-from ui import back_kb, btn, kb, panel
+from ui import back_kb, btn, kb, panel, share_btn
 from utils import esc
 
 
@@ -50,7 +50,10 @@ def after_explore_kb(uid: int, key: str, npcs: Optional[list] = None) -> InlineK
 
 
 def after_death_kb(uid: int) -> InlineKeyboardMarkup:
-    return kb([btn("🌍 برگردم ماجراجویی", f"m:go:{uid}", "green"), btn("🎴 کارت من", f"m:pass:{uid}", "blue")])
+    return kb(
+        [btn("🌍 برگردم ماجراجویی", f"m:go:{uid}", "green"), btn("🎴 کارت من", f"m:pass:{uid}", "blue")],
+        [share_btn(uid, "☠️ همین الان مُردم و ایزدبانو بهم خندید! بیا تو هم بازی کن و بمیر 😂")],
+    )
 
 
 async def send_hub(m, doc: Optional[dict] = None):

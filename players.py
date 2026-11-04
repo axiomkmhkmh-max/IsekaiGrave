@@ -1,6 +1,7 @@
 """منطق بازیکن: لقب‌ها، بازتولد (مرگ)، بقا، GS/XP/آیتم و بونوس کلاس‌ها."""
 
 import random
+from datetime import timedelta
 from typing import Optional
 
 from pymongo import ReturnDocument
@@ -36,6 +37,10 @@ def earned_titles(doc: dict) -> list:
         t.append("دستیار جلاد")
     if doc.get("referrals_total", 0) >= 3:
         t.append("دلالِ برده‌های ایزدبانو")
+    if doc.get("referrals_total", 0) >= 5:
+        t.append("سفیرِ ایزدبانو")
+    if doc.get("referrals_total", 0) >= 10:
+        t.append("اسقفِ ارواح")
     if doc.get("wins", 0) >= 5:
         t.append("دوئل‌بازِ حرفه‌ای")
     if doc.get("trips", 0) >= 20:
@@ -156,3 +161,18 @@ def gold_bonus(doc: Optional[dict], g: int) -> int:
 
 def heal_bonus(doc: Optional[dict], h: int) -> int:
     return int(h * 1.3) if cls_is(doc, "priest") else h        # ✨ کشیش: ۳۰٪ شفای بیشتر
+
+
+async def bump_streak(doc: dict) -> Optional[str]:
+    """🔥 استریک روزانه (به وقت UTC): روز اول هر روز یک‌بار، پاداشِ GS با سقفِ روز ۷. خروجی: خطِ پیام یا None."""
+    uid, now = doc["user_id"], utcnow()
+    today, yday = now.strftime("%Y-%m-%d"), (now - timedelta(days=1)).strftime("%Y-%m-%d")
+    n = doc.get("streak", 0) + 1 if doc.get("streak_day") == yday else 1
+    res = await store.users.update_one({"user_id": uid, "streak_day": {"$ne": today}},
+                                       {"$set": {"streak": n, "streak_day": today}})
+    if not res.modified_count:
+        return None
+    bonus = 10 * min(n, 7)
+    await grant(uid, gold=bonus)
+    return f"🔥 <b>استریک {n} روزه!</b> 🪙 +{bonus} GS. فردا هم بیا تا بیشتر بشه." if n > 1 else \
+           f"🔥 اولین گشتِ امروز! 🪙 +{bonus} GS. هر روز بیای پاداشت بیشتر میشه."

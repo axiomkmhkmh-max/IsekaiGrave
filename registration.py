@@ -24,10 +24,10 @@ def reg_text_intro(name: str) -> str:
         f"{GODDESS_NAME}، <i>{GODDESS_TITLE}</i>، به <b>{esc(name)}</b> خیره شد…",
         "💅 «یه روحِ تازه. اسمت تو لیست اشک‌ریزان نیست؛ یعنی هیچ‌کس برات گریه نمی‌کنه. عالی. قراردادمو امضا کن، وگرنه از دروازه‌م رد نمیشی.»",
         "┈┈┈┈┈┈┈┈┈┈",
-        "برای شروع بازی، ۳ مرحله داری (فقط چند کلیکه 🙂):",
+        "برای شروع بازی فقط ۲ کلیک داری 🙂:",
         "① 🩸 امضای قرارداد",
         "② 🎭 انتخاب کلاس (نوع شخصیتت)",
-        "③ 🕯 انتخاب هدیه‌ی شروع",
+        "🕯 هدیه‌ی شروع رو بعدش برمی‌داری؛ مستقیم میری تو بازی!",
         "┈┈┈┈┈┈┈┈┈┈",
         "⚠️ <i>ریزنوشت: روحِ تو از این لحظه ملکِ منه. بازگشت پول و فرار ممنوع.</i>",
     ])
@@ -42,7 +42,7 @@ def reg_kb_intro(uid: int) -> InlineKeyboardMarkup:
 
 def reg_text_class() -> str:
     lines = ["هر کلاس یه امتیاز ویژه داره؛ یکی رو انتخاب کن 👇", *[f"{c['icon']} <b>{c['name']}</b> — {c['desc']}" for c in CLASSES.values()]]
-    return panel("blue", "🎭", "مرحله‌ی ۲: کلاس‌ت رو انتخاب کن", lines,
+    return panel("blue", "🎭", "آخرین مرحله: کلاس‌ت رو انتخاب کن", lines,
                  "💅 <i>«زیاد فکر نکن؛ هر کدوم رو برداری، آخرش مال منی.»</i>")
 
 
@@ -67,7 +67,27 @@ def reg_kb_boon(cls_key: str, uid: int) -> InlineKeyboardMarkup:
     return kb(*[[btn(f"{b['icon']} {b['name']}", f"reg:boon:{cls_key}:{k}:{uid}", b["color"])] for k, b in BOONS.items()])
 
 
-async def finish_registration(user: User, cls_key: str, boon_key: str) -> Optional[dict]:
+async def _give_boon(uid: int, boon_key: str):
+    if boon_key == "gold":
+        await grant(uid, gold=150)
+    elif boon_key == "xp":
+        await grant(uid, xp=100)
+    else:
+        item = f"🔗 {random.choice(['تاجِ فراموش‌شده‌ی آخرالزمان', 'شمشیرِ بی‌نامِ دروازه‌ی آخر', 'حلقه‌ی پایانِ همه‌چیز'])} ‹پیمان‌دار›"   # 🔗 روح‌پیوند: قابل تجهیز، غیرقابل فروش
+        await grant(uid, item=item)
+
+
+async def claim_gift(user: User, boon_key: str) -> Optional[dict]:
+    """🕯 هدیه‌ی شروع (بعد از ثبت‌نام): اتمیک، فقط یک‌بار. اگه قبلاً برداشته باشه None."""
+    res = await store.users.update_one({"user_id": user.id, "registered": True, "pact": None},
+                                       {"$set": {"pact": boon_key}})
+    if res.modified_count == 0:
+        return None
+    await _give_boon(user.id, boon_key)
+    return await store.get(user.id)
+
+
+async def finish_registration(user: User, cls_key: str, boon_key: Optional[str] = None) -> Optional[dict]:
     """ثبت‌نام رو نهایی می‌کنه. اگه قبلاً ثبت‌نام شده باشه None برمی‌گردونه."""
     form, _ = random.choice(FORMS)
     rate = random.randint(55, 90)
@@ -81,28 +101,24 @@ async def finish_registration(user: User, cls_key: str, boon_key: str) -> Option
     )
     if res.modified_count == 0:
         return None
-    if boon_key == "gold":
-        await grant(user.id, gold=150)
-    elif boon_key == "xp":
-        await grant(user.id, xp=100)
-    else:
-        item = f"🔗 {random.choice(['تاجِ فراموش‌شده‌ی آخرالزمان', 'شمشیرِ بی‌نامِ دروازه‌ی آخر', 'حلقه‌ی پایانِ همه‌چیز'])} ‹پیمان‌دار›"   # 🔗 روح‌پیوند: قابل تجهیز، غیرقابل فروش
-        await grant(user.id, item=item)
+    if boon_key:
+        await _give_boon(user.id, boon_key)
     return await store.get(user.id)
 
 
-def reg_done_text(doc: dict, cls_key: str, boon_key: str) -> str:
-    c, b = CLASSES[cls_key], BOONS[boon_key]
+def reg_done_text(doc: dict, cls_key: str, boon_key: Optional[str] = None) -> str:
+    c = CLASSES[cls_key]
+    b = BOONS.get(boon_key) if boon_key else None
     return panel("green", "🎉", "قرارداد امضا شد! به ایسکا خوش اومدی", [
         f"🪪 <b>{esc(doc.get('first_name'))}</b> — {c['icon']} {c['name']}",
-        f"🕯 سوگند: {b['icon']} {b['name']}",
+        f"🕯 هدیه‌ی شروع: {b['icon']} {b['name']}" if b else "🎁 هدیه‌ی شروعت منتظره؛ از دکمه‌های پایین یکی رو بردار 👇",
         f"🧬 فرم اولیه: {esc(doc.get('form'))}",
         f"🌍 دنیا: {esc(doc.get('world'))}",
         f"🎁 چیت‌اسکیل: {esc(doc.get('cheat_skill'))}",
         "┈┈┈┈┈┈┈┈┈┈",
         *stat_lines(doc),
         "🏷 لقب: «روحِ ثبت‌شده‌ی ایزدبانو»",
-    ], f"💅 <i>«{b['quip']} حالا برو. هر کاری می‌خوای بکن؛ آخرش مال منی.»</i>\n💡 برای باز کردن منوی بازی بنویس «زندگی من».")
+    ], f"💅 <i>«{b['quip'] if b else 'هدیه‌ت رو بردار و گمشو تو ایسکا.'} حالا برو. هر کاری می‌خوای بکن؛ آخرش مال منی.»</i>\n💡 برای باز کردن منوی بازی بنویس «زندگی من».")
 
 
 async def start_registration(m):
@@ -122,5 +138,13 @@ async def reg_prompt(m):
         rows.append([btn("📩 ثبت‌نام در پیوی", url=f"https://t.me/{runtime.bot_username}?start=reg")])
     await m.reply(panel("red", "🚪", "دروازه بسته‌ست", [
         f"💅 «{esc(m.from_user.first_name)}… بدون قرارداد، دروازه‌م به روت بسته‌ست. حتی مرده‌ها فرم پر می‌کنن؛ تو از مرده‌ها هم تنبل‌تری؟»",
-        "برای شروع بازی اول ثبت‌نام کن؛ فقط ۳ تا کلیکه 🙂",
+        "برای شروع بازی اول ثبت‌نام کن؛ فقط ۲ تا کلیکه 🙂",
     ]), reply_markup=kb(*rows))
+
+
+def reg_kb_done(uid: int, with_gift: bool) -> InlineKeyboardMarkup:
+    rows = []
+    if with_gift:
+        rows += [[btn(f"{b['icon']} {b['name']} — {b['desc']}", f"reg:gift:{k}:{uid}", b["color"])] for k, b in BOONS.items()]
+    rows += [[btn("🌍 اولین ماجراجویی", f"x:forest:{uid}", "green"), btn("🌙 منو", f"m:main:{uid}", "blue")]]
+    return kb(*rows)

@@ -24,7 +24,7 @@ from npc import do_npc, do_trade
 from quests import do_quests
 from raid import do_boss_call, do_boss_status, do_raid_hit
 from registration import (
-    finish_registration, reg_done_text, reg_kb_boon, reg_kb_class, reg_prompt, reg_text_boon,
+    claim_gift, finish_registration, reg_kb_done, reg_done_text, reg_kb_boon, reg_kb_class, reg_prompt, reg_text_boon,
     reg_text_class, start_registration,
 )
 from render import render_passport
@@ -91,14 +91,28 @@ async def handle_cb(cq: CallbackQuery, bot: Bot):
                 return
             await cq.answer()
             await start_registration(m)
+        elif act == "gift" and len(parts) >= 4 and parts[2] in BOONS:
+            if not registered:
+                await cq.answer("اول ثبت‌نام کن. 🙂", show_alert=True)
+                return
+            gdoc = await claim_gift(user, parts[2])
+            if not gdoc:
+                await cq.answer("هدیه‌ی شروعت رو قبلاً برداشتی. 🎁", show_alert=True)
+                return
+            await cq.answer("هدیه برداشته شد! 🎁")
+            await safe_edit(cq.message, reg_done_text(gdoc, gdoc.get("cls"), parts[2]), reg_kb_done(uid, False))
         elif registered:
             await cq.answer("ثبت‌نامت قبلاً انجام شده. 👍", show_alert=True)
         elif act == "sign":
             await cq.answer("قلم رو بردار… 🩸")
             await safe_edit(cq.message, reg_text_class(), reg_kb_class(uid))
         elif act == "cls" and len(parts) >= 4 and parts[2] in CLASSES:
-            await cq.answer(CLASSES[parts[2]]["name"])
-            await safe_edit(cq.message, reg_text_boon(parts[2]), reg_kb_boon(parts[2], uid))
+            ndoc = await finish_registration(user, parts[2], None)
+            if not ndoc:
+                await cq.answer("قبلاً ثبت‌نام شدی.", show_alert=True)
+                return
+            await cq.answer("قرارداد امضا شد! 🎉")
+            await safe_edit(cq.message, reg_done_text(ndoc, parts[2], None), reg_kb_done(uid, True))
         elif act == "boon" and len(parts) >= 5 and parts[2] in CLASSES and parts[3] in BOONS:
             ndoc = await finish_registration(user, parts[2], parts[3])
             if not ndoc:

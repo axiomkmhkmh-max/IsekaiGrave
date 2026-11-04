@@ -35,6 +35,7 @@ import logchannel
 from handlers import router
 from territories import recover_sieges
 from updates import notify_if_updated
+from weekly import weekly_loop
 
 
 async def main():
@@ -57,9 +58,11 @@ async def main():
     await recover_battles(bot)      # ⚔️ نبردهای در جریان ادامه پیدا می‌کنن
     await recover_sieges(bot)       # 🏰 محاصره‌های باز نتیجه می‌گیرن
     await notify_if_updated(bot)   # اگه BOT_VERSION عوض شده باشه، به پلیرها پیام آپدیت میره
+    weekly_task = asyncio.create_task(weekly_loop(bot))   # 🏆 تغییر هفته + اعلامیه‌ی گروه برتر
     try:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
+        weekly_task.cancel()
         await logchannel.stop()
 
 

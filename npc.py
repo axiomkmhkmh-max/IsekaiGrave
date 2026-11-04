@@ -13,7 +13,7 @@ from players import grant, heal_bonus, spend
 from quests import quest_progress
 from render import stat_lines
 from ui import btn, kb, panel, say
-from utils import esc
+from utils import esc, is_group
 
 
 async def do_npc(m: Message, npc_key: str):
@@ -65,6 +65,9 @@ async def do_npc(m: Message, npc_key: str):
         )
         foot = f"💡 دکمه‌ی «قبول معامله» رو بزن یا بنویس «<b>قبول معامله</b>» ({GS} تو: {doc.get('gold', 0)} 🪙)"
     elif npc_key == "cafe":
+        rumor = await rumor_for(m, doc)
+        if rumor:
+            lines.append(f"☕ «بین خودمون بمونه… {rumor}»")
         if await spend(uid, 10):
             h = heal_bonus(doc, int(random.randint(6, 14) * (1.2 if "forest" in await terr_perks(doc) else 1)))
             d2, _ = await grant(uid, xp=5, survival=h)
@@ -72,6 +75,9 @@ async def do_npc(m: Message, npc_key: str):
         else:
             lines.append(f"☕ قهوه ۱۰ {GS} میشه و تو نداری. کافه‌چی یه لیوان آب بهت داد: «برو ماجراجویی کن، بعد برگرد!»")
     elif npc_key == "guard":
+        rumor = await rumor_for(m, doc)
+        if rumor:
+            lines.append(f"💂 «{rumor}»")
         gcount = await store.guilds.count_documents({})
         lines.append(
             f"💂 «الان {gcount} گیلد تو این قاره فعالن. اگه گیلد نداری، یکی بساز یا به یکی بپیوند؛ تنهایی سخته!»"
@@ -156,3 +162,31 @@ async def roll_encounter(doc: dict, biome: str) -> list:
         picks.append((k, NPC_ARRIVE[k][biome]))
     await store.users.update_one({"user_id": uid}, {"$set": {"npc_here": [k for k, _ in picks], "npc_last": picks[0][0]}})
     return picks
+
+
+async def rumor_for(m, doc: dict) -> str:
+    """🗣 شایعه‌ی NPC درباره‌ی یکی از بازیکن‌های همین گروه (تو پیوی خالی برمی‌گرده)."""
+    if not is_group(m):
+        return ""
+    cands = await store.users.aggregate([
+        {"$match": {"chats": m.chat.id, "registered": True, "opted_out": {"$ne": True}, "banned": {"$ne": True},
+                    "user_id": {"$ne": doc["user_id"]}}},
+        {"$sample": {"size": 1}},
+    ]).to_list(1)
+    if not cands:
+        return ""
+    t = cands[0]
+    name = f"<b>{esc(t.get('first_name') or 'یه ناشناس')}</b>"
+    pool = []
+    if t.get("death_count", 0) >= 2:
+        pool.append(f"شنیدم {name} تا حالا {t['death_count']} بار مُرده و هنوز اصرار داره «نقشه داشت»!")
+    if t.get("trips", 0) >= 5:
+        pool.append(f"{name} {t['trips']} بار رفته ماجراجویی. یا قهرمانه یا خونه‌ش رو گم کرده.")
+    if t.get("guild"):
+        pool.append(f"{name} عضو گیلد «{esc(t['guild'])}» شده. می‌گن اونجا همه‌چی دست‌دومه، حتی وفاداری.")
+    if t.get("spouse_name"):
+        pool.append(f"{name} با {esc(t['spouse_name'])} پیوند بسته. ایزدبانو هنوز تو ماتمه.")
+    if t.get("level", 1) >= 3:
+        pool.append(f"{name} به سطح {t['level']} رسیده. مواظبش باش؛ بوی غرور میده.")
+    pool.append(f"{name} دیروز از کنارم رد شد و به من سلام نکرد. یادداشت کردم.")
+    return random.choice(pool)

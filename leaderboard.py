@@ -40,4 +40,7 @@ async def do_board(m: Message):
     if top_g:
         lines.append("┈┈┈┈┈┈┈┈┈┈")
         lines.append("🛡 <b>گیلدهای برتر:</b> " + "، ".join(f"{esc(x['name'])} ({x.get('wins', 0)}🏆)" for x in top_g))
+    inv = await store.users.find({"referrals_total": {"$gt": 0}, "opted_out": {"$ne": True}}).sort("referrals_total", -1).limit(3).to_list(3)
+    if inv:
+        lines.append("🔗 <b>برترین سفیرها:</b> " + "، ".join(f"{esc(x.get('first_name') or '؟')} ({x['referrals_total']})" for x in inv))
     await m.reply(panel("yellow", "🏆", "لیدربرد گروه‌ها (جنگ قلمروها)", lines, foot or None))

@@ -2,6 +2,7 @@
 
 تغییرِ هفته «اتمیک» ادعا میشه (فقط یک پردازش پاداش‌ها رو می‌ده) تا چند اینستنسِ همزمان، پاداش رو دوبار ندن."""
 
+import asyncio
 from typing import Optional
 
 from pymongo import ReturnDocument
@@ -10,7 +11,48 @@ from pymongo.errors import DuplicateKeyError
 from config import log, TERR_TRIBUTE, WEEKLY_TITHE_ABOVE, WEEKLY_TITHE_PCT
 from database import store
 from economy import burn
-from utils import week_key
+from leaderboard import group_score
+from ui import panel
+from utils import esc, week_key
+
+
+_bot = None
+
+
+async def _announce_top_group():
+    """🏆 اعلام هفتگیِ «قوی‌ترین گروه» تو گروه‌های برتر (فقط پردازشی که هفته رو ادعا کرده صداش می‌زنه)."""
+    if _bot is None:
+        return
+    groups = await store.groups.find({}).sort("activity", -1).limit(20).to_list(20)
+    scored = sorted([await group_score(g["chat_id"], g) for g in groups], key=lambda x: -x["score"])
+    if not scored:
+        return
+    top = scored[0]
+    await store.meta.update_one({"_id": "week"}, {"$set": {"top_group": {"chat_id": top["chat_id"], "title": top["title"], "score": top["score"]}}})
+    for i, sc in enumerate(scored[:10]):
+        lines = [f"👑 قوی‌ترین گروهِ هفته: <b>{esc(top['title'])}</b> — ⚡{top['score']}",
+                 f"📍 جایگاه گروه شما: <b>#{i + 1}</b> — ⚡{sc['score']}"]
+        if i > 0:
+            lines.append(f"🔥 تا صدرنشین فقط {max(top['score'] - sc['score'], 0)} امتیاز فاصله دارید؛ دوئل، جنگ و ماجراجویی یادتون نره!")
+        else:
+            lines.append("🏆 همه‌ی ایسکا الان اسم شما رو می‌دونه. ازش دفاع کنید!")
+        try:
+            await _bot.send_message(sc["chat_id"], panel("yellow", "🏆", "اعلامیه‌ی هفتگیِ ایزدبانو", lines, "💅 «لیدربرد کامل: بنویسید «لیدربرد».»"))
+        except Exception:
+            log.info("weekly announce skipped for %s", sc["chat_id"])
+        await asyncio.sleep(0.1)
+
+
+async def weekly_loop(bot):
+    """هر نیم‌ساعت چک می‌کنه هفته عوض شده یا نه (قبلاً فقط با فعالیت گیلد چک می‌شد)."""
+    global _bot
+    _bot = bot
+    while True:
+        try:
+            await ensure_week()
+        except Exception:
+            log.exception("weekly loop failed")
+        await asyncio.sleep(1800)
 
 
 async def _weekly_rollover(old_meta: Optional[dict], wk: str) -> dict:
@@ -46,6 +88,11 @@ async def _weekly_rollover(old_meta: Optional[dict], wk: str) -> dict:
         except Exception:
             log.exception("weekly tithe failed")
     await store.meta.update_one({"_id": "week"}, {"$set": {"king": king}})
+    if old_meta:     # اولین دیپلوی (بدون هفته‌ی قبل) اعلامیه نمیده
+        try:
+            await _announce_top_group()
+        except Exception:
+            log.exception("weekly announce failed")
     return {"key": wk, "king": king}
 
 

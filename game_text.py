@@ -289,7 +289,7 @@ async def handle_text(m: Message, bot: Bot):
     if INVITE_RE.fullmatch(c):
         link = f"https://t.me/{runtime.bot_username}?start=ref_{uid}"
         await m.reply(panel("blue", "🔗", "لینک دعوت اختصاصی", [
-            link, "هر ۳ نفر که با این لینک وارد بازی بشن = یه شانس خرید از بازار سیاه 🎁",
+            link, "هر ۳ نفر = یه شانس خرید از بازار سیاه 🎁 · ۵ نفر = لقب «سفیرِ ایزدبانو» 🏷 · ۱۰ نفر = «اسقفِ ارواح» 👑",
         ]), reply_markup=kb([btn("📩 باز کردن لینک", url=link)]))
         return
     if OPT_OUT_RE.fullmatch(c):
