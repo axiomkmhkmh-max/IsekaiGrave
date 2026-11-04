@@ -12,6 +12,7 @@ from economy import terr_perks
 from content import BIOMES, gline, LORE_LINES, RARITIES, roll_item
 from database import store
 from menus import after_death_kb, after_explore_kb
+from npc import roll_encounter
 from players import cls_is, gold_bonus, grant, heal_bonus, refresh_titles, reincarnate
 from quests import quest_progress
 from render import render_rebirth, render_scene, stat_lines
@@ -44,7 +45,7 @@ async def do_explore(m: Message, key: str):
     perks = await terr_perks(doc)      # 🎖 مزیتِ قلمروهای گیلد: بندر (+۱۰٪ GS) و جنگل (+۲۰٪ شفا)
     def gain(g: int) -> int:
         return int(gold_bonus(doc, g) * (1.1 if "port" in perks else 1))
-    await store.users.update_one({"user_id": uid}, {"$set": {"location": key}, "$inc": {"trips": 1}})
+    await store.users.update_one({"user_id": uid}, {"$set": {"location": key, "npc_here": []}, "$inc": {"trips": 1}})
     kinds = list(B["w"].keys())
     kind = random.choices(kinds, weights=[B["w"][k] for k in kinds])[0]
 
@@ -127,11 +128,14 @@ async def do_explore(m: Message, key: str):
         mk = after_death_kb(uid)
     else:
         doc = await store.get(uid)
+        met = await roll_encounter(doc, key)          # 🧙 NPCِ زنده‌ی سرِ راه (اگه بود)
+        if met:
+            lines += ["┈┈┈┈┈┈┈┈┈┈", *[f"👣 {arrive}" for _, arrive in met]]
         lines += ["┈┈┈┈┈┈┈┈┈┈", *stat_lines(doc)]
         doc, new = await refresh_titles(doc)
         text = panel(B["color"], B["icon"], B["name"], lines, gline(doc) if random.random() < 0.3 else None)
         if new:
             text += "\n🏷 <b>لقب جدید:</b> " + "، ".join(f"«{esc(t)}»" for t in new)
-        mk = after_explore_kb(uid, key)
+        mk = after_explore_kb(uid, key, [k for k, _ in met])
     await m.reply(text, reply_markup=mk)
     await quest_progress(m, "trip")

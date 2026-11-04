@@ -1,12 +1,12 @@
-"""گفتگو با NPCها، ماموریت‌های NPC و معامله."""
+"""NPCهای زنده: برخورد وسط ماجراجویی، گفتگو، ماموریت‌های NPC و معامله."""
 
 import random
 
 from aiogram.types import Message
 from pymongo import ReturnDocument
 
-from config import GS, WITCH_RESTORE_COST
-from content import BIOME_LIST, BIOMES, NPCS, QUEST_REWARD, roast_for, SHOP_ITEMS
+from config import GS, NPC_CITY_CHANCE, NPC_ENCOUNTER_CHANCE, WITCH_RESTORE_COST
+from content import BIOME_LIST, BIOMES, NPC_ARRIVE, NPC_SPOTS, NPCS, QUEST_REWARD, roast_for, SHOP_ITEMS
 from database import store
 from economy import terr_perks
 from players import grant, heal_bonus, spend
@@ -20,15 +20,21 @@ async def do_npc(m: Message, npc_key: str):
     uid = m.from_user.id
     doc = await store.get(uid)
     npc = NPCS[npc_key]
-    if (doc.get("location") or "city") != "city":
-        await m.reply(
-            panel(npc["color"], npc["icon"], npc["name"], [
-                "اینجا کسی نیست جز باد و اسلایم. 🌬",
-                f"برای حرف زدن با <b>{npc['name']}</b> اول به «شهر» برو. 👇",
-            ]),
-            reply_markup=kb([btn("🏰 ورود به شهر", f"x:city:{uid}", "green")]),
-        )
-        return
+    loc = doc.get("location") or "city"
+    if loc != "city":
+        # بیرونِ شهر فقط NPCـی که همین الان سر راهته اینجاست؛ هر برخورد یک گفتگو (اتمیک، ضد دابل‌کلیک)
+        met = await store.users.find_one_and_update(
+            {"user_id": uid, "npc_here": npc_key}, {"$pull": {"npc_here": npc_key}},
+            return_document=ReturnDocument.BEFORE)
+        if not met:
+            await m.reply(
+                panel(npc["color"], npc["icon"], npc["name"], [
+                    f"<b>{npc['name']}</b> دیگه اینجا نیست؛ همین الان رفت پی کارش. 🌬",
+                    "تو شهر همیشه پیداشون می‌کنی، یا وسط راه بهشون برمی‌خوری. 👣",
+                ]),
+                reply_markup=kb([btn("🌍 ادامه‌ی ماجراجویی", f"x:{loc}:{uid}", "green")]),
+            )
+            return
     lines = [f"💬 <i>{roast_for(doc)}</i>", "┈┈┈┈┈┈┈┈┈┈"]
     foot = None
 
@@ -47,7 +53,7 @@ async def do_npc(m: Message, npc_key: str):
             lines.append(
                 f"📜 <b>ماموریت جدید!</b>\n«جوون، برو <b>{B['name']}</b> {B['icon']} یه گشتی بزن و سالم برگرد. "
                 f"اگه موفق شدی، {reward} {GS} جایزه داری! 🎁»\n"
-                f"👉 برای رفتن بنویس: «سفر به {B['kw'].strip('()').split('|')[0]}»"
+                f"👉 هر وقت خواستی، از دکمه‌ی «ماجراجویی» یا با نوشتن «سفر به {B['kw'].strip('()').split('|')[0]}» برو."
             )
     elif npc_key == "shop":
         item, price = random.choice(SHOP_ITEMS)
@@ -57,7 +63,7 @@ async def do_npc(m: Message, npc_key: str):
         lines.append(
             f"🛒 «فقط امروز! <b>{esc(item)}</b> — فقط <b>{price} {GS}</b>. فرصت خوبیه، بدو!»"
         )
-        foot = f"💡 برای خرید بنویس «<b>قبول معامله</b>» ({GS} تو: {doc.get('gold', 0)} 🪙)"
+        foot = f"💡 دکمه‌ی «قبول معامله» رو بزن یا بنویس «<b>قبول معامله</b>» ({GS} تو: {doc.get('gold', 0)} 🪙)"
     elif npc_key == "cafe":
         if await spend(uid, 10):
             h = heal_bonus(doc, int(random.randint(6, 14) * (1.2 if "forest" in await terr_perks(doc) else 1)))
@@ -84,10 +90,12 @@ async def do_npc(m: Message, npc_key: str):
     d3 = await store.get(uid)
     lines += ["┈┈┈┈┈┈┈┈┈┈", *stat_lines(d3)]
     rows = []
+    if npc_key == "shop":
+        rows.append([btn("🛒 قبول معامله", f"tr:ok:{uid}", "green")])
     if npc_key == "witch":
         rows.append([btn("🔥 کوره‌ی روح", f"fg:home:{uid}", "red"), btn(f"🕯 بازیابی روح ({WITCH_RESTORE_COST})", f"fg:rs:{uid}", "purple")])
-    await m.reply(panel(npc["color"], npc["icon"], npc["name"], lines, foot),
-                  reply_markup=kb(*rows, [btn("🧙 NPCهای دیگه", f"m:npc:{uid}", "blue"), btn("🌙 منو", f"m:main:{uid}", "green")]))
+    rows.append([btn("🌍 ادامه‌ی ماجراجویی", f"x:{loc}:{uid}", "green"), btn("🌙 منو", f"m:main:{uid}", "blue")])
+    await m.reply(panel(npc["color"], npc["icon"], npc["name"], lines, foot), reply_markup=kb(*rows))
     await quest_progress(m, "npc")
 
 
@@ -108,3 +116,43 @@ async def do_trade(m: Message) -> bool:
     await m.reply(panel("yellow", "🛒", "معامله انجام شد",
                         [f"🎁 {esc(item)}", f"🪙 −{pt['price']} {GS}", "🧔 «معامله‌ی خوبی بود! دوباره بیا.»"]))
     return True
+
+
+async def roll_encounter(doc: dict, biome: str) -> list:
+    """
+    NPCهای زنده: وسط ماجراجویی ممکنه یکی (یا تو شهر گاهی دو تا) سر راهِ بازیکن سبز بشه.
+    خروجی: [(npc_key, جمله‌ی ورود), ...]. انتخاب به حال بازیکن حساسه (بقای کم → جادوگر/کافه،
+    ماموریت فعال → پیرمرد، پول کافی → مغازه‌دار، بی‌گیلد → نگهبان) و NPCِ دفعه‌ی قبل تکرار نمیشه.
+    ذخیره‌ی حضورشون (`npc_here`) رو خودِ این تابع انجام میده.
+    """
+    uid = doc["user_id"]
+    in_city = biome == "city"
+    if random.random() >= (NPC_CITY_CHANCE if in_city else NPC_ENCOUNTER_CHANCE):
+        return []
+    last = doc.get("npc_last")
+    pool = [k for k, spots in NPC_SPOTS.items() if biome in spots and k != last]
+    if not pool:
+        return []
+    surv = doc.get("survival_rate", 50)
+
+    def weight(k: str) -> float:
+        w = 1.0
+        if k in ("witch", "cafe") and surv < 40:
+            w *= 3
+        if k == "old_man" and doc.get("quest"):
+            w *= 3
+        if k == "shop" and doc.get("gold", 0) >= 60:
+            w *= 2
+        if k == "guard" and not doc.get("guild"):
+            w *= 2
+        return w
+
+    picks = []
+    for _ in range(2 if in_city and random.random() < 0.35 else 1):
+        if not pool:
+            break
+        k = random.choices(pool, weights=[weight(x) for x in pool])[0]
+        pool.remove(k)
+        picks.append((k, NPC_ARRIVE[k][biome]))
+    await store.users.update_one({"user_id": uid}, {"$set": {"npc_here": [k for k, _ in picks], "npc_last": picks[0][0]}})
+    return picks

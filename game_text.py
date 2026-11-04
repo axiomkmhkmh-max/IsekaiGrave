@@ -246,8 +246,8 @@ async def handle_text(m: Message, bot: Bot):
             if re.search(npc["alias"], target):
                 await do_npc(m, key)
                 return
-        await say(m, "این آدم تو شهر نیست. یکی از اینا رو امتحان کن: «پیرمرد»، «مغازه‌دار»، «کافه‌چی»، «نگهبان» یا «جادوگر». 🤷", "🧙", "NPC", "purple",
-                  kb([btn("🧙 لیست NPCها", f"m:npc:{m.from_user.id}", "blue")]))
+        await say(m, "همچین آدمی تو ایسکا نمی‌شناسم. 🤷 یکی از اینا رو امتحان کن: «پیرمرد»، «مغازه‌دار»، «کافه‌چی»، «نگهبان» یا «جادوگر»؛ تو شهر همیشه هستن و بیرون وسط ماجراجویی بهشون برمی‌خوری.", "🧙", "NPC", "purple",
+                  kb([btn("🌍 برو ماجراجویی", f"m:go:{m.from_user.id}", "green")]))
         return
 
     # ۸) سفر و ماجراجویی

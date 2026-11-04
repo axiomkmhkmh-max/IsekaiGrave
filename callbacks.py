@@ -20,7 +20,7 @@ from leaderboard import do_board
 from market import do_buy, drop_offer
 from marriage import do_divorce, do_marry_info, marriage_answer
 from menus import help_kb, hub_kb, hub_text
-from npc import do_npc
+from npc import do_npc, do_trade
 from quests import do_quests
 from raid import do_boss_call, do_boss_status, do_raid_hit
 from registration import (
@@ -130,6 +130,9 @@ async def handle_cb(cq: CallbackQuery, bot: Bot):
         await do_explore(m, parts[1])
     elif kind == "n" and parts[1] in NPCS:
         await do_npc(m, parts[1])
+    elif kind == "tr":
+        if not await do_trade(m):
+            await say(m, "پیشنهادِ معامله‌ای باز نیست؛ شاید قبلاً قبول کردی یا مغازه‌دار منصرف شد. 🧔", "🛒", "معامله", "yellow")
     elif kind == "duelacc":
         if not await do_duel_accept(m):
             await say(m, "این دوئل تموم شده یا برای تو نیست.", "⚔️", "دوئل", "orange")
@@ -162,15 +165,10 @@ async def handle_cb(cq: CallbackQuery, bot: Bot):
         act = parts[1]
         if act == "main":
             await safe_edit(cq.message, hub_text(doc), hub_kb(uid))
-        elif act == "go":
+        elif act in ("go", "npc"):      # «npc»: پنل‌های قدیمیِ قبل از NPCهای زنده
             rows = [[btn(f"{b['icon']} {b['name']}", f"x:{k}:{uid}", b["color"])] for k, b in BIOMES.items()]
             await safe_edit(cq.message, panel("green", "🌍", "کجا بریم؟", [
-                "👇 یه مکان انتخاب کن تا ماجراجویی شروع بشه.\n💅 «هر جا بری، یا بدبخت میشی یا می‌میری. هر دو برای من سرگرم‌کننده‌ست.»",
-            ]), kb(*rows, back_kb(uid)))
-        elif act == "npc":
-            rows = [[btn(f"{n['icon']} {n['name']}", f"n:{k}:{uid}", n["color"])] for k, n in NPCS.items()]
-            await safe_edit(cq.message, panel("purple", "🧙", "با کی حرف بزنیم؟", [
-                "💡 NPCها فقط تو «شهر» هستن. اول به شهر برو، بعد باهاشون حرف بزن. 🏰",
+                "👇 یه مکان انتخاب کن تا ماجراجویی شروع بشه. 🧙 وسط راه ممکنه به آدم‌های زنده‌ی ایسکا بربخوری!\n💅 «هر جا بری، یا بدبخت میشی یا می‌میری. هر دو برای من سرگرم‌کننده‌ست.»",
             ]), kb(*rows, back_kb(uid)))
         elif act == "pass":
             await m.reply(render_passport(doc), reply_markup=kb(back_kb(uid)))

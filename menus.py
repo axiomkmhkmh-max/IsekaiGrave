@@ -15,7 +15,7 @@ def hub_kb(uid: int) -> InlineKeyboardMarkup:
     u = uid
     return kb(
         [btn("🎴 کارت من", f"m:pass:{u}", "blue"), btn("🎒 کوله‌پشتی", f"m:inv:{u}", "green")],
-        [btn("🌍 ماجراجویی", f"m:go:{u}", "green"), btn("🧙 NPCها", f"m:npc:{u}", "blue")],
+        [btn("🌍 ماجراجویی", f"m:go:{u}", "green")],
         [btn("🎡 گردونه‌ی شانس", f"m:wheel:{u}", "green"), btn("📜 ماموریت‌ها", f"m:quest:{u}", "blue")],
         [btn("🛡 گیلد من", f"m:guild:{u}", "blue"), btn("⚔️ جنگ گیلدها", f"m:war:{u}", "red")],
         [btn("👑 قلمروها", f"m:terr:{u}", "green"), btn("🐉 باس گروه", f"m:boss:{u}", "red")],
@@ -38,8 +38,12 @@ def hub_text(doc: dict) -> str:
     return panel("purple", "🌙", "پنل‌های ایزدبانوی پایان", lines, gline(doc))
 
 
-def after_explore_kb(uid: int, key: str) -> InlineKeyboardMarkup:
+def after_explore_kb(uid: int, key: str, npcs: Optional[list] = None) -> InlineKeyboardMarkup:
+    """npcs: کلیدِ NPCهایی که همین الان سر راه بازیکنن (دکمه‌ی گفتگو، بالای بقیه)."""
+    from content import NPCS  # import تنبل
+    npc_rows = [[btn(f"💬 حرف زدن با {NPCS[k]['icon']} {NPCS[k]['name']}", f"n:{k}:{uid}", NPCS[k]["color"])] for k in (npcs or [])]
     return kb(
+        *npc_rows,
         [btn("🌍 دوباره بگرد", f"x:{key}:{uid}", "green"), btn("🎴 کارت من", f"m:pass:{uid}", "blue")],
         [btn("📜 ماموریت‌ها", f"m:quest:{uid}", "blue"), btn("🌙 منو", f"m:main:{uid}", "green")],
     )
