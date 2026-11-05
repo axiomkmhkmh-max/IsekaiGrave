@@ -58,6 +58,9 @@ def config_problem() -> Optional[str]:
     if not OPENROUTER_MODEL:
         return ("OPENROUTER_MODEL تنظیم نشده؛ AI خاموش است. شناسه‌ی دقیقِ یک مدل رایگان را از openrouter.ai/models "
                 "(فیلتر Free؛ شناسه معمولاً با «:free» تموم میشه) کپی کن و تو Variables بذار. مدلی حدس زده نمیشه.")
+    if "/" not in OPENROUTER_MODEL or any(ch.isspace() for ch in OPENROUTER_MODEL):
+        return ("OPENROUTER_MODEL نامعتبره (باید شبیه vendor/model-name باشه، بدون فاصله)؛ شناسه‌ی دقیق رو از openrouter.ai/models کپی کن. "
+                "AI خاموش است.")
     return None
 
 
@@ -154,15 +157,17 @@ def _hard_block(seconds: int, key: str, msg: str):
     _warn_once(key, msg)
 
 
-async def _http_call(messages: list, max_tokens: int, temperature: float) -> Optional[str]:
+async def _http_call(messages: list, max_tokens: int, temperature: float, info: Optional[dict] = None) -> Optional[str]:
     global _blocked_until, _fail_streak, _merge_system
     import aiohttp
     url = f"{OPENROUTER_BASE_URL}/chat/completions"
     headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"}
     merged = _merge_system
     rate_limited = False
+    info = info if info is not None else {}
     for attempt in range(AI_RETRIES + 1):
         if time.time() < _blocked_until:
+            info.setdefault("reason", "cooldown")
             return None
         body = {"model": OPENROUTER_MODEL, "messages": _merge_system_msgs(messages) if merged else messages,
                 "max_tokens": max_tokens, "temperature": temperature}
@@ -186,11 +191,13 @@ async def _http_call(messages: list, max_tokens: int, temperature: float) -> Opt
                 content = _strip_think(content) if isinstance(content, str) else ""
                 if not content:
                     stats["http_other"] += 1
+                    info["reason"] = "empty_response"
                     return None                  # جوابِ خالی (مثلاً مدلِ reasoning با max_tokens کم) → fallback
                 _fail_streak = 0
                 if merged:
                     _merge_system = True
                 return content
+            info["reason"] = f"http_{status}"
             if status == 429:
                 stats["http_429"] += 1
                 rate_limited = True
@@ -223,9 +230,11 @@ async def _http_call(messages: list, max_tokens: int, temperature: float) -> Opt
             stats["http_other"] += 1
             log.warning("AI HTTP %s: %s", status, _redact(text)[:200])
             return None
-        except (asyncio.TimeoutError, aiohttp.ClientError):
+        except (asyncio.TimeoutError, aiohttp.ClientError) as e:
+            info["reason"] = "timeout" if isinstance(e, asyncio.TimeoutError) else f"client_error:{type(e).__name__}"
             await asyncio.sleep(1.0 + attempt)
         except Exception as e:
+            info["reason"] = f"crash:{type(e).__name__}"
             log.error("AI call crashed: %s: %s", type(e).__name__, _redact(e)[:200])
             return None
     _note_failure(rate_limited)
@@ -234,11 +243,11 @@ async def _http_call(messages: list, max_tokens: int, temperature: float) -> Opt
 
 async def _worker():
     while True:
-        fut, messages, max_tokens, temperature = await _queue.get()
+        fut, messages, max_tokens, temperature, info = await _queue.get()
         try:
             if fut.done():          # صدازننده منتظر نموند
                 continue
-            res = await _http_call(messages, max_tokens, temperature)
+            res = await _http_call(messages, max_tokens, temperature, info)
             if not fut.done():
                 fut.set_result(res)
         except Exception:
@@ -260,9 +269,24 @@ def _ensure_workers():
 
 
 async def ask(messages: list, *, uid: Optional[int] = None, max_tokens: int = 200, temperature: float = 0.8,
-              cache_key: Optional[str] = None, wait: Optional[float] = None) -> Optional[str]:
-    """یک درخواست به OpenRouter از طریق صف. None = AI در دسترس/مجاز نیست (fallback بزن)."""
+              cache_key: Optional[str] = None, wait: Optional[float] = None, tag: str = "generic",
+              info: Optional[dict] = None) -> Optional[str]:
+    """یک درخواست به OpenRouter از طریق صف. None = AI در دسترس/مجاز نیست (fallback بزن).
+
+    tag فقط برچسبِ لاگه (مثلاً npc_chat:guard)؛ info (اختیاری) دیکتی‌ـه که دلیلِ شکست رو تو کلیدِ "reason" می‌گیره.
+    لاگ‌ها هرگز متنِ پیام‌ها/کلید رو نمی‌نویسن؛ فقط tag، مدل، وضعیتِ HTTP/نوعِ خطا.
+    """
+    info = info if info is not None else {}
+
+    def _fail(reason: str):
+        info.setdefault("reason", reason)
+        stats["fail"] += 1
+        log.warning("OpenRouter request failed tag=%s reason=%s", _redact(tag), _redact(info["reason"]))
+        return None
+
     if not ai_available():
+        info["reason"] = "disabled" if not AI_ENABLED else "not_configured"
+        log.info("OpenRouter request skipped tag=%s reason=%s", _redact(tag), info["reason"])
         return None
     ck = None
     if cache_key:
@@ -270,28 +294,34 @@ async def ask(messages: list, *, uid: Optional[int] = None, max_tokens: int = 20
         hit = _cache.get(ck)
         if hit and time.time() - hit[0] < AI_CACHE_TTL:
             stats["cache_hit"] += 1
+            info["cached"] = True
+            log.info("AI cache hit tag=%s", _redact(tag))
             return hit[1]
     if time.time() < _blocked_until or not _allow(uid):
         stats["rate_limited"] += 1
+        info["reason"] = "cooldown_or_rate_limited"
+        log.warning("OpenRouter request failed tag=%s reason=%s", _redact(tag), info["reason"])
         return None
     _ensure_workers()
     fut = asyncio.get_running_loop().create_future()
+    log.info("OpenRouter request started tag=%s model=%s", _redact(tag), OPENROUTER_MODEL)
     try:
-        _queue.put_nowait((fut, messages, max_tokens, temperature))
+        _queue.put_nowait((fut, messages, max_tokens, temperature, info))
     except asyncio.QueueFull:
         stats["queue_full"] += 1
+        info["reason"] = "queue_full"
+        log.warning("OpenRouter request failed tag=%s reason=queue_full", _redact(tag))
         return None
     try:
         res = await asyncio.wait_for(fut, timeout=wait or (AI_TIMEOUT * (AI_RETRIES + 1) + 5))
     except asyncio.TimeoutError:
         fut.cancel()
-        stats["fail"] += 1
-        return None
+        return _fail("wait_timeout")
     if not res:
-        stats["fail"] += 1
-        return None
+        return _fail("no_result")
     stats["ok"] += 1
     res = res.strip()
+    log.info("OpenRouter request succeeded tag=%s chars=%d", _redact(tag), len(res))
     if ck:
         if len(_cache) > 500:
             _cache.clear()

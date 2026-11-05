@@ -9,7 +9,7 @@ from aiogram.types import Message
 
 from admin import handle_admin_commands
 from config import (
-    DROP_COOLDOWN, HERALD_CHANCE, HERALD_COOLDOWN, LOOT_CHANCE, LOOT_COOLDOWN, RAID_SPAWN_CHANCE,
+    log, DROP_COOLDOWN, HERALD_CHANCE, HERALD_COOLDOWN, LOOT_CHANCE, LOOT_COOLDOWN, RAID_SPAWN_CHANCE,
     RANDOM_DROP_CHANCE, runtime,
 )
 from content import gline, GODDESS_NAME, NPCS, ROASTS
@@ -313,6 +313,15 @@ async def handle_text(m: Message, bot: Bot):
     if HELP_RE.fullmatch(c):
         await m.reply(SMALL_TALK_HELP, reply_markup=kb([btn("🌙 منوی اصلی", f"m:main:{uid}", "green")]))
         return
+
+    # ۹.۵) گفتگوی آزاد با NPCـی که همین الان باهاش حرف می‌زنی (قبل از جوابِ پیش‌فرضِ ایزدبانو/راهنما)
+    if me_doc and (mentioned or replied_to_bot or not group):
+        try:
+            from worldnpc import do_npc_chat
+            if await do_npc_chat(m, me_doc, re.sub(r"@\w+", " ", m.text or "")):
+                return
+        except Exception:
+            log.exception("npc chat failed")
 
     # ۱۰) صدا زدن بدون دستور معتبر
     if mentioned or replied_to_bot:

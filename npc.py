@@ -38,6 +38,11 @@ async def do_npc(m: Message, npc_key: str):
                 reply_markup=kb([btn("🌍 ادامه‌ی ماجراجویی", f"x:{loc}:{uid}", "green")]),
             )
             return
+    try:
+        from worldnpc import set_talk
+        set_talk(uid, npc_key, loc)        # 🗣 پیام‌های آزادِ بعدیِ بازیکن (ریپلای/منشن/پیوی) به همین NPC میره
+    except Exception:
+        log.exception("set_talk failed")
     lines = [f"💬 <i>{roast_for(doc)}</i>", "┈┈┈┈┈┈┈┈┈┈"]
     foot = None
 
