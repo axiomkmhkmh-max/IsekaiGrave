@@ -38,11 +38,12 @@ MOVES = ("strike", "ward", "fate", "echo")
 
 
 def make_fighter(doc: dict, gear: int = 0, perks=(), reborn: bool = False) -> dict:
+    from procgen import effect_total      # 🎲 پاسیو/چیت‌اسکیلِ ساخته‌شده (با سقف)
     lvl = int(doc.get("level", 1))
     sv = int(doc.get("survival_rate", 50))
     cls = doc.get("cls")
-    max_hp = 80 + lvl * 6 + int(sv * 0.6)
-    atk = 18 + lvl * 3 + gear
+    max_hp = int((80 + lvl * 6 + int(sv * 0.6)) * (1 + effect_total(doc, "hp_pct") / 100))
+    atk = int((18 + lvl * 3 + gear) * (1 + effect_total(doc, "atk_pct") / 100))
     if "castle" in perks:
         atk = int(atk * 1.08)
     echo = echo_charges(int(doc.get("death_count", 0))) + (1 if "ruins" in perks else 0)

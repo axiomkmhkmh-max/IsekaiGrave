@@ -4,6 +4,8 @@ import random
 from datetime import timedelta
 from typing import Optional
 
+from procgen import effect_total
+
 from pymongo import ReturnDocument
 
 from content import CHEATS, DEATH_TITLES, FORM_TITLE, FORMS, WORLDS
@@ -156,11 +158,13 @@ def cls_is(doc: Optional[dict], key: str) -> bool:
 
 
 def gold_bonus(doc: Optional[dict], g: int) -> int:
-    return int(g * 1.25) if cls_is(doc, "rogue") else g       # 🗡 دزد: ۲۵٪ GS بیشتر
+    g = int(g * 1.25) if cls_is(doc, "rogue") else g           # 🗡 دزد: ۲۵٪ GS بیشتر
+    return int(g * (1 + effect_total(doc, "gold_pct") / 100))  # 🎲 پاسیوِ کلاس/چیت‌اسکیل (با سقف)
 
 
 def heal_bonus(doc: Optional[dict], h: int) -> int:
-    return int(h * 1.3) if cls_is(doc, "priest") else h        # ✨ کشیش: ۳۰٪ شفای بیشتر
+    h = int(h * 1.3) if cls_is(doc, "priest") else h            # ✨ کشیش: ۳۰٪ شفای بیشتر
+    return int(h * (1 + effect_total(doc, "heal_pct") / 100))
 
 
 async def bump_streak(doc: dict) -> Optional[str]:
@@ -176,3 +180,8 @@ async def bump_streak(doc: dict) -> Optional[str]:
     await grant(uid, gold=bonus)
     return f"🔥 <b>استریک {n} روزه!</b> 🪙 +{bonus} GS. فردا هم بیا تا بیشتر بشه." if n > 1 else \
            f"🔥 اولین گشتِ امروز! 🪙 +{bonus} GS. هر روز بیای پاداشت بیشتر میشه."
+
+
+def loss_cut(doc: Optional[dict], loss: int) -> int:
+    """🛡 کاهشِ ضررِ بقا از پاسیو/چیت‌اسکیل (حداقل ۱)."""
+    return max(1, int(loss * (1 - effect_total(doc, "loss_cut_pct") / 100)))

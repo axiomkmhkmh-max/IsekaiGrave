@@ -31,7 +31,7 @@ from intents import (
     GUILD_INVITE_RE, GUILD_JOIN_RE, GUILD_LEAVE_RE, GUILD_ME_RE, GUILD_WAR_RE, HELP_RE, INV_RE,
     INVITE_RE, MARKET_RE, MARRY_ACCEPT_RE, MARRY_DECLINE_RE, MARRY_RE, MENU_RE, NPC_RE, OPEN_RE,
     OPT_IN_RE, OPT_OUT_RE, PASSPORT_RE, QUEST_RE, REG_RE, REPLY_EXEC_RE, SIEGE_RE, SMALL_TALK_HELP,
-    STROLL_RE, TERR_RE, TITLES_RE, TRADE_RE, TRAVEL_RE, WHEEL_RE,
+    STROLL_RE, TERR_RE, TITLES_RE, TRADE_RE, TRAVEL_RE, WHEEL_RE, WORLD_RE, CHEAT_RE,
     DONATE_RE, EQUIP_RE, EXCH_RE, FORGE_RE, FORT_RE, GS_RE, SELL_RE,
 )
 from inventory import send_inventory
@@ -44,6 +44,7 @@ from quests import do_quests
 from raid import do_boss_call, do_boss_status, do_raid_hit, spawn_raid
 from registration import reg_prompt, start_registration
 from render import display, render_passport
+from worldnpc import do_cheat, do_world, ensure_gen_profile
 from territories import do_siege, do_terr, find_terr
 from ui import back_kb, btn, kb, panel, say
 from utils import clean, esc, is_group, norm, utcnow
@@ -58,7 +59,7 @@ def looks_like_game(c: str, n: str, m: Message) -> bool:
     full = (MENU_RE, QUEST_RE, TERR_RE, SIEGE_RE, MARRY_RE, MARRY_ACCEPT_RE, MARRY_DECLINE_RE, DIVORCE_RE,
             BOSS_CALL_RE, BOSS_HIT_RE, BOSS_STATUS_RE, DEATH_RE, PASSPORT_RE, TITLES_RE, INV_RE, INVITE_RE,
             STROLL_RE, DUEL_RE, GUILD_CREATE_RE, GUILD_JOIN_RE, GUILD_WAR_RE, GUILD_ME_RE, GUILD_LEAVE_RE,
-            GUILD_INVITE_RE, EXCH_RE, SELL_RE, FORGE_RE, EQUIP_RE, GS_RE, DONATE_RE, FORT_RE)
+            GUILD_INVITE_RE, EXCH_RE, SELL_RE, FORGE_RE, EQUIP_RE, GS_RE, DONATE_RE, FORT_RE, WORLD_RE, CHEAT_RE)
     srch = (WHEEL_RE, BOARD_RE, CAFE_RE, NPC_RE, MARKET_RE, ACCEPT_RE, TRADE_RE)
     if any(r.fullmatch(c) for r in full) or any(r.search(c) for r in srch):
         return True
@@ -194,6 +195,14 @@ async def handle_text(m: Message, bot: Bot):
         await do_board(m)
         return
 
+    # ۶.۴) 🌐 جهانِ زنده و 🌟 چیت‌اسکیل
+    if WORLD_RE.fullmatch(c):
+        await do_world(m)
+        return
+    if CHEAT_RE.fullmatch(c):
+        await do_cheat(m)
+        return
+
     # ۶.۵) منو، ماموریت، قلمرو، پیوند، صندوق/بمب، باس
     if MENU_RE.fullmatch(c):
         await send_hub(m, me_doc)
@@ -280,6 +289,7 @@ async def handle_text(m: Message, bot: Bot):
         await send_inventory(m, me_doc)
         return
     if PASSPORT_RE.fullmatch(c):
+        me_doc = await ensure_gen_profile(me_doc)
         await m.reply(render_passport(me_doc), reply_markup=kb(
             [btn("🌙 منو", f"m:main:{uid}", "blue"), btn("🎒 کوله‌پشتی", f"m:inv:{uid}", "green")]))
         return

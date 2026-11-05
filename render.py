@@ -5,6 +5,7 @@ import random
 from config import GS_DAILY_SOFT_CAP
 from content import BIOMES, CLASSES, GODDESS_JUDGE, LAST_WORDS, SCENES
 from rules import echo_charges, gear_bonus
+from procgen import profile_lines
 from ui import hp_bar, panel, xp_bar
 from utils import day_key, esc
 
@@ -49,7 +50,7 @@ def render_rebirth(doc: dict, new_titles: list) -> str:
     lines = [
         f"🧬 فرم جدید: {esc(doc['form'])}",
         f"🌍 دنیا: {esc(doc['world'])}",
-        f"🎁 چیت‌اسکیل: {esc(doc['cheat_skill'])}",
+        f"🎁 جهشِ این زندگی: {esc(doc['cheat_skill'])}",
         f"💀 نرخ بقا: <b>{r}٪</b> {hp_bar(r)}",
         f"☠️ تعداد مرگ: {doc['death_count']}",
         f"🔁 پژواکِ بازتولد: <b>{echo_charges(int(doc['death_count']))}</b> — هر مرگ تو نبرد بهت قدرت می‌ده، نه ضعف!",
@@ -83,7 +84,7 @@ def render_passport(doc: dict) -> str:
         f"🏷 لقب: {esc(titles[-1]) if titles else '—'}",
         f"🧬 فرم فعلی: {esc(doc.get('form'))}",
         f"🌍 دنیا: {esc(doc.get('world'))}",
-        f"🎁 چیت‌اسکیل: {esc(doc.get('cheat_skill'))}",
+        *(profile_lines(doc) or [f"🎁 چیت‌اسکیل: {esc(doc.get('cheat_skill'))}"]),
         f"📍 مکان: {loc['icon']} {loc['name']}",
         f"🛡 گیلد: {esc(doc.get('guild')) if doc.get('guild') else 'بی‌گیلد'}",
         f"🎭 کلاس: {class_label(doc)}",

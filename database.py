@@ -29,6 +29,8 @@ class Store:
         self.ledger = db["ledger"]          # دفتر تراکنش‌های مهمِ GS
         self.battles = db["battles"]        # ⚔️ نبردهای تاکتیکی (دوئل)
         self.sieges = db["sieges"]          # 🏰 محاصره‌ها
+        self.wnpcs = db["wnpcs"]            # 🌍 NPCهای زنده (حافظه، روابط، مکان، اهداف)
+        self.wevents = db["wevents"]        # 🌍 رویدادهای جهان + تاریخچه
 
     async def ensure_indexes(self):
         await self.users.create_index("user_id", unique=True)
@@ -52,6 +54,9 @@ class Store:
         # حداکثر یه محاصره‌ی بازِ همزمان برای هر قلمرو
         await self.sieges.create_index("key", unique=True, partialFilterExpression={"status": "open"},
                                        name="one_open_siege_per_territory")
+        await self.wnpcs.create_index("id", unique=True)
+        await self.wevents.create_index("id", unique=True)
+        await self.wevents.create_index([("status", 1), ("region", 1)])
         # کاربرهای قدیمی (قبل از سیستم ثبت‌نام) رو خودکار «ثبت‌شده» حساب کن
         await self.users.update_many({"registered": {"$exists": False}}, {"$set": {"registered": True, "cls": None}})
 

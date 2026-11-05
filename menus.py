@@ -15,7 +15,8 @@ def hub_kb(uid: int) -> InlineKeyboardMarkup:
     u = uid
     return kb(
         [btn("🎴 کارت من", f"m:pass:{u}", "blue"), btn("🎒 کوله‌پشتی", f"m:inv:{u}", "green")],
-        [btn("🌍 ماجراجویی", f"m:go:{u}", "green")],
+        [btn("🌍 ماجراجویی", f"m:go:{u}", "green"), btn("🌐 جهان", f"m:world:{u}", "blue")],
+        [btn("🌟 چیت‌اسکیل و کلاس", f"m:cheat:{u}", "purple")],
         [btn("🎡 گردونه‌ی شانس", f"m:wheel:{u}", "green"), btn("📜 ماموریت‌ها", f"m:quest:{u}", "blue")],
         [btn("🛡 گیلد من", f"m:guild:{u}", "blue"), btn("⚔️ جنگ گیلدها", f"m:war:{u}", "red")],
         [btn("👑 قلمروها", f"m:terr:{u}", "green"), btn("🐉 باس گروه", f"m:boss:{u}", "red")],
@@ -41,7 +42,14 @@ def hub_text(doc: dict) -> str:
 def after_explore_kb(uid: int, key: str, npcs: Optional[list] = None) -> InlineKeyboardMarkup:
     """npcs: کلیدِ NPCهایی که همین الان سر راه بازیکنن (دکمه‌ی گفتگو، بالای بقیه)."""
     from content import NPCS  # import تنبل
-    npc_rows = [[btn(f"💬 حرف زدن با {NPCS[k]['icon']} {NPCS[k]['name']}", f"n:{k}:{uid}", NPCS[k]["color"])] for k in (npcs or [])]
+    from worldsim import npc_label
+    npc_rows = []
+    for k in (npcs or []):
+        if k in NPCS:
+            npc_rows.append([btn(f"💬 حرف زدن با {NPCS[k]['icon']} {NPCS[k]['name']}", f"n:{k}:{uid}", NPCS[k]["color"])])
+        else:                                   # NPCِ زنده‌ی بدونِ مکانیکِ قدیمی (آهنگر، ماجراجو، خنیاگر، …)
+            nm, ic = npc_label(k)
+            npc_rows.append([btn(f"💬 حرف زدن با {ic} {nm}", f"wn:{k}:hi:{uid}", "purple")])
     return kb(
         *npc_rows,
         [btn("🌍 دوباره بگرد", f"x:{key}:{uid}", "green"), btn("🎴 کارت من", f"m:pass:{uid}", "blue")],

@@ -13,7 +13,11 @@ from content import BIOMES, gline, LORE_LINES, RARITIES, roll_item
 from database import store
 from menus import after_death_kb, after_explore_kb
 from npc import roll_encounter
-from players import bump_streak, cls_is, gold_bonus, grant, heal_bonus, refresh_titles, reincarnate
+from procgen import cheat_is_active, effect_total
+from worldnpc import ensure_gen_profile, on_quest_done
+from worldsim import explore_after, explore_weights
+from config import WORLD_ENABLED
+from players import bump_streak, cls_is, loss_cut, gold_bonus, grant, heal_bonus, refresh_titles, reincarnate
 from quests import quest_progress
 from render import render_rebirth, render_scene, stat_lines
 from territories import terr_income
@@ -41,13 +45,15 @@ async def do_explore(m: Message, key: str):
     _last_explore[uid] = now
 
     B = BIOMES[key]
-    doc = await store.get(uid)
+    doc = await ensure_gen_profile(await store.get(uid))
     perks = await terr_perks(doc)      # 🎖 مزیتِ قلمروهای گیلد: بندر (+۱۰٪ GS) و جنگل (+۲۰٪ شفا)
     def gain(g: int) -> int:
         return int(gold_bonus(doc, g) * (1.1 if "port" in perks else 1))
     await store.users.update_one({"user_id": uid}, {"$set": {"location": key, "npc_here": []}, "$inc": {"trips": 1}})
     kinds = list(B["w"].keys())
-    kind = random.choices(kinds, weights=[B["w"][k] for k in kinds])[0]
+    base_w = {k: B["w"][k] for k in kinds}
+    wts = await explore_weights(key, base_w) if WORLD_ENABLED else base_w     # 🌍 خطر/رونق و رویدادهای فعالِ منطقه
+    kind = random.choices(kinds, weights=[wts[k] for k in kinds])[0]
 
     lines = [f"<i>{random.choice(B['intro'])}</i>", "┈┈┈┈┈┈┈┈┈┈"]
     died = False
@@ -71,12 +77,12 @@ async def do_explore(m: Message, key: str):
             g = gain(random.randint(8, 30))
             doc, leveled = await grant(uid, gold=g, xp=random.randint(18, 35))
             lines.append(f"⚔️ <b>پیروز شدی!</b> هیولا فرار کرد و یه کیسه‌ی کوچیک جا گذاشت.\n🪙 +{g} {GS}")
-            if random.random() < 0.3:
+            if random.random() < 0.3 + effect_total(doc, "loot_chance_pct") / 100:
                 item, _, _ = roll_item(B["items"])
                 doc, _ = await grant(uid, item=item)
                 lines.append(f"🎁 غنیمت: {esc(item)}")
         else:
-            loss = random.randint(8, 20)
+            loss = loss_cut(doc, random.randint(8, 20))
             doc, _ = await grant(uid, xp=4, survival=-loss)
             lines.append(f"🩸 <b>شکست خوردی!</b> {esc(mname)} ازت قوی‌تر بود. −{loss}٪ بقا. دفعه‌ی بعد بهتر میشه! 💪")
             if doc.get("survival_rate", 100) <= 2:
@@ -86,7 +92,7 @@ async def do_explore(m: Message, key: str):
         doc, leveled = await grant(uid, xp=6, survival=h)
         lines.append(f"💚 یه چشمه‌ی شفابخش پیدا کردی و ازش خوردی. +{h}٪ بقا.")
     elif kind == "trap":
-        loss = random.randint(5, 14)
+        loss = loss_cut(doc, random.randint(5, 14))
         doc, _ = await grant(uid, xp=3, survival=-loss)
         lines.append(f"🕳 {random.choice(B['traps'])}. −{loss}٪ بقا.")
         if doc.get("survival_rate", 100) <= 2:
@@ -105,7 +111,9 @@ async def do_explore(m: Message, key: str):
         doc, lv2 = await grant(uid, gold=reward, xp=30)
         leveled = leveled or lv2
         await store.users.update_one({"user_id": uid}, {"$set": {"quest": None}})
-        lines.append(f"📜 <b>ماموریت پیرمرد انجام شد!</b> 🪙 +{reward} {GS} و ۳۰ XP. «آفرین! کارت عالی بود.»")
+        giver = q.get("giver") or "پیرمرد"
+        lines.append(f"📜 <b>ماموریتِ {esc(giver)} انجام شد!</b> 🪙 +{reward} {GS} و ۳۰ XP. «آفرین! کارت عالی بود.»")
+        await on_quest_done(uid, q)
 
     # 👑 درآمد قلمرو + امتیاز هفتگی گیلد
     if not died and doc.get("guild"):
@@ -115,6 +123,10 @@ async def do_explore(m: Message, key: str):
             lines.append(f"👑 درآمد قلمروهای گیلد: 🪙 +{inc}")
         await add_guild_pts(doc.get("guild"), 1)
 
+    if cheat_is_active(doc):
+        await store.users.update_one({"user_id": uid, "cheat_charges": {"$gt": 0}}, {"$inc": {"cheat_charges": -1}})
+    if WORLD_ENABLED:
+        lines += await explore_after(uid, key, died)
     if not died:
         sl = await bump_streak(doc)
         if sl:

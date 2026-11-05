@@ -24,9 +24,9 @@ def reg_text_intro(name: str) -> str:
         f"{GODDESS_NAME}، <i>{GODDESS_TITLE}</i>، به <b>{esc(name)}</b> خیره شد…",
         "💅 «یه روحِ تازه. اسمت تو لیست اشک‌ریزان نیست؛ یعنی هیچ‌کس برات گریه نمی‌کنه. عالی. قراردادمو امضا کن، وگرنه از دروازه‌م رد نمیشی.»",
         "┈┈┈┈┈┈┈┈┈┈",
-        "برای شروع بازی فقط ۲ کلیک داری 🙂:",
-        "① 🩸 امضای قرارداد",
-        "② 🎭 انتخاب کلاس (نوع شخصیتت)",
+        "برای شروع بازی فقط یه کلیک داری 🙂:",
+        "🩸 امضای قرارداد",
+        "🎲 کلاس و چیت‌اسکیلِ رندومِ مخصوصِ خودت همون لحظه ساخته میشه (و برای همیشه مالِ توئه).",
         "🕯 هدیه‌ی شروع رو بعدش برمی‌داری؛ مستقیم میری تو بازی!",
         "┈┈┈┈┈┈┈┈┈┈",
         "⚠️ <i>ریزنوشت: روحِ تو از این لحظه ملکِ منه. بازگشت پول و فرار ممنوع.</i>",
@@ -87,15 +87,19 @@ async def claim_gift(user: User, boon_key: str) -> Optional[dict]:
     return await store.get(user.id)
 
 
-async def finish_registration(user: User, cls_key: str, boon_key: Optional[str] = None) -> Optional[dict]:
+async def finish_registration(user: User, cls_key: Optional[str] = None, boon_key: Optional[str] = None) -> Optional[dict]:
     """ثبت‌نام رو نهایی می‌کنه. اگه قبلاً ثبت‌نام شده باشه None برمی‌گردونه."""
+    from worldnpc import enrich_flavor, new_profile_fields
+    from worldsim import spawn
     form, _ = random.choice(FORMS)
     rate = random.randint(55, 90)
+    prof = new_profile_fields(user.id, cls_key)       # 🎲 کلاس + چیت‌اسکیلِ رندومِ قطعی (seed ثابت = ریرول ممکن نیست)
     res = await store.users.update_one(
         {"user_id": user.id, "registered": {"$ne": True}},
         {"$set": {
-            "registered": True, "cls": cls_key, "pact": boon_key, "registered_at": utcnow(),
-            "form": form, "cheat_skill": random.choice(CHEATS), "world": random.choice(WORLDS),
+            "registered": True, "cls": prof["cls"], "pact": boon_key, "registered_at": utcnow(),
+            "gclass": prof["gclass"], "cheat": prof["cheat"], "cheat_uses": 0, "cheat_charges": 0,
+            "form": form, "cheat_skill": prof["cheat_skill"], "world": random.choice(WORLDS),
             "survival_rate": rate, "status": status_for(rate), "first_name": user.full_name,
         }, "$push": {"titles": "روحِ ثبت‌شده‌ی ایزدبانو"}},
     )
@@ -103,18 +107,20 @@ async def finish_registration(user: User, cls_key: str, boon_key: Optional[str] 
         return None
     if boon_key:
         await _give_boon(user.id, boon_key)
+    spawn(enrich_flavor(user.id))                      # AI فقط متنِ توصیف رو (در پس‌زمینه) قشنگ می‌کنه
     return await store.get(user.id)
 
 
 def reg_done_text(doc: dict, cls_key: str, boon_key: Optional[str] = None) -> str:
-    c = CLASSES[cls_key]
+    from procgen import profile_lines
+    c = CLASSES[doc.get("cls") or cls_key]
     b = BOONS.get(boon_key) if boon_key else None
     return panel("green", "🎉", "قرارداد امضا شد! به ایسکا خوش اومدی", [
         f"🪪 <b>{esc(doc.get('first_name'))}</b> — {c['icon']} {c['name']}",
         f"🕯 هدیه‌ی شروع: {b['icon']} {b['name']}" if b else "🎁 هدیه‌ی شروعت منتظره؛ از دکمه‌های پایین یکی رو بردار 👇",
         f"🧬 فرم اولیه: {esc(doc.get('form'))}",
         f"🌍 دنیا: {esc(doc.get('world'))}",
-        f"🎁 چیت‌اسکیل: {esc(doc.get('cheat_skill'))}",
+        *profile_lines(doc),
         "┈┈┈┈┈┈┈┈┈┈",
         *stat_lines(doc),
         "🏷 لقب: «روحِ ثبت‌شده‌ی ایزدبانو»",
@@ -138,7 +144,7 @@ async def reg_prompt(m):
         rows.append([btn("📩 ثبت‌نام در پیوی", url=f"https://t.me/{runtime.bot_username}?start=reg")])
     await m.reply(panel("red", "🚪", "دروازه بسته‌ست", [
         f"💅 «{esc(m.from_user.first_name)}… بدون قرارداد، دروازه‌م به روت بسته‌ست. حتی مرده‌ها فرم پر می‌کنن؛ تو از مرده‌ها هم تنبل‌تری؟»",
-        "برای شروع بازی اول ثبت‌نام کن؛ فقط ۲ تا کلیکه 🙂",
+        "برای شروع بازی اول ثبت‌نام کن؛ فقط یه کلیکه 🙂",
     ]), reply_markup=kb(*rows))
 
 

@@ -10,6 +10,8 @@ ENV:
   ADMIN_USER_IDS      (optional) آیدی عددی ادمین‌ها با کاما: "123456789,987654321"
   LOG_CHANNEL         (optional, default: @isekailog) کانال لاگِ کارهای بازیکن‌ها؛ ربات باید ادمین کانال باشه. خالی = خاموش
   LOG_NAV             (optional, default: 0) 1 = کلیک‌های ناوبری منو هم لاگ بشه
+  CEREBRAS_API_KEY / CEREBRAS_MODEL / CEREBRAS_BASE_URL / AI_ENABLED  (optional) هوش مصنوعیِ NPCها؛ بدونِ کلید دنیا با پایتون کار می‌کنه
+  WORLD_ENABLED / WORLD_TICK_SECONDS / WORLD_TIME_SCALE / WORLD_EVENT_CHANCE  (optional) دنیای زنده
 
 نکته: از BotFather گزینه‌ی Group Privacy رو Disable کن تا ربات پیام‌های عادی گروه رو ببینه.
 
@@ -36,6 +38,9 @@ from handlers import router
 from territories import recover_sieges
 from updates import notify_if_updated
 from weekly import weekly_loop
+import aiclient
+from config import WORLD_ENABLED
+from worldsim import world_loop
 
 
 async def main():
@@ -59,10 +64,14 @@ async def main():
     await recover_sieges(bot)       # 🏰 محاصره‌های باز نتیجه می‌گیرن
     await notify_if_updated(bot)   # اگه BOT_VERSION عوض شده باشه، به پلیرها پیام آپدیت میره
     weekly_task = asyncio.create_task(weekly_loop(bot))   # 🏆 تغییر هفته + اعلامیه‌ی گروه برتر
+    world_task = asyncio.create_task(world_loop(bot)) if WORLD_ENABLED else None   # 🌍 دنیای زنده (ساعت، NPCها، رویدادها، اقتصاد)
     try:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
         weekly_task.cancel()
+        if world_task:
+            world_task.cancel()
+        await aiclient.shutdown()
         await logchannel.stop()
 
 

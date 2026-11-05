@@ -5,10 +5,11 @@ import random
 from aiogram.types import Message
 from pymongo import ReturnDocument
 
-from config import GS, NPC_CITY_CHANCE, NPC_ENCOUNTER_CHANCE, WITCH_RESTORE_COST
+from config import GS, log, NPC_CITY_CHANCE, NPC_ENCOUNTER_CHANCE, WITCH_RESTORE_COST
 from content import BIOME_LIST, BIOMES, NPC_ARRIVE, NPC_SPOTS, NPCS, QUEST_REWARD, roast_for, SHOP_ITEMS
 from database import store
 from economy import terr_perks
+from procgen import effect_total
 from players import grant, heal_bonus, spend
 from quests import quest_progress
 from render import stat_lines
@@ -26,6 +27,8 @@ async def do_npc(m: Message, npc_key: str):
         met = await store.users.find_one_and_update(
             {"user_id": uid, "npc_here": npc_key}, {"$pull": {"npc_here": npc_key}},
             return_document=ReturnDocument.BEFORE)
+        if not met and await store.wnpcs.find_one({"id": npc_key, "location": loc}):
+            met = True        # 🌍 شبیه‌سازی می‌گه همین الان تو این منطقه‌ست
         if not met:
             await m.reply(
                 panel(npc["color"], npc["icon"], npc["name"], [
@@ -57,8 +60,20 @@ async def do_npc(m: Message, npc_key: str):
             )
     elif npc_key == "shop":
         item, price = random.choice(SHOP_ITEMS)
+        try:
+            from worldsim import get_world
+            from worlddata import item_resource, price_mult
+            w = await get_world()
+            if w and loc in w["economy"]["supply"]:     # 💱 قیمتِ منطقه‌ای: عرضه/تقاضا (ضریب ۰٫۷ تا ۱٫۷)
+                res = item_resource(item)
+                pm = price_mult(w["economy"]["supply"][loc][res], w["economy"]["bias"][loc][res])
+                price = max(1, int(price * pm))
+                lines.append(f"📈 قیمتِ {esc(item)} اینجا ×{pm} ({'کمیاب' if pm > 1.1 else 'فراوون' if pm < 0.9 else 'عادی'})")
+        except Exception:
+            log.exception("shop price failed")
         if "capital" in await terr_perks(doc):      # 🏰 مزیتِ پایتخت: ۱۰٪ تخفیف
             price = max(1, int(price * 0.9))
+        price = max(1, int(price * (1 - effect_total(doc, "shop_discount_pct") / 100)))   # 🎲 تخفیفِ پاسیو/چیت
         await store.users.update_one({"user_id": uid}, {"$set": {"pending_trade": {"item": item, "price": price}}})
         lines.append(
             f"🛒 «فقط امروز! <b>{esc(item)}</b> — فقط <b>{price} {GS}</b>. فرصت خوبیه، بدو!»"
@@ -93,6 +108,12 @@ async def do_npc(m: Message, npc_key: str):
             await grant(uid, survival=-c, xp=8)
             lines.append(f"🕯 جادوگر یه طلسم کوچیک روت امتحان کرد! −{c}٪ بقا. (طلسمِ «سه روز چای سرد»)")
         lines.append(f"🔥 «کوره‌ی من هم بازه: تجهیز، ارتقا، ادغام. و اگه روحت ترک خورده، {WITCH_RESTORE_COST} {GS} بده ترمیمش کنم.»")
+    from config import WORLD_ENABLED as _WE
+    if _WE:
+        from worldnpc import world_voice
+        v = await world_voice(doc, npc_key)         # 🗨 صدای شخصیت‌دارِ NPC (AI یا fallback) + حافظه/نظر
+        if v:
+            lines.insert(2, v)
     d3 = await store.get(uid)
     lines += ["┈┈┈┈┈┈┈┈┈┈", *stat_lines(d3)]
     rows = []
@@ -132,6 +153,15 @@ async def roll_encounter(doc: dict, biome: str) -> list:
     ذخیره‌ی حضورشون (`npc_here`) رو خودِ این تابع انجام میده.
     """
     uid = doc["user_id"]
+    from config import WORLD_ENABLED
+    if WORLD_ENABLED:
+        try:
+            from worldnpc import world_encounter
+            res = await world_encounter(doc, biome)       # 🌍 NPCهایی که طبقِ شبیه‌سازی همین الان اینجان
+            if res is not None:
+                return res
+        except Exception:
+            log.exception("world_encounter failed; falling back")
     in_city = biome == "city"
     if random.random() >= (NPC_CITY_CHANCE if in_city else NPC_ENCOUNTER_CHANCE):
         return []

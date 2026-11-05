@@ -118,3 +118,34 @@ class Runtime:
 
 
 runtime = Runtime()
+
+# ───────────────────────────── 🤖 هوش مصنوعی (Cerebras) و 🌍 دنیای زنده ─────────────────────────────
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+
+
+AI_ENABLED = os.getenv("AI_ENABLED", "1") != "0"                       # ۰ = AI کامل خاموش (دنیا با پایتون کار می‌کنه)
+CEREBRAS_API_KEY = os.getenv("CEREBRAS_API_KEY", "")
+CEREBRAS_BASE_URL = os.getenv("CEREBRAS_BASE_URL", "https://api.cerebras.ai/v1").rstrip("/")
+CEREBRAS_MODEL = os.getenv("CEREBRAS_MODEL", "llama3.1-8b")
+AI_TIMEOUT = _env_int("AI_TIMEOUT", 15)                               # ثانیه برای هر درخواست HTTP
+AI_RETRIES = _env_int("AI_RETRIES", 2)
+AI_MAX_CONCURRENT = _env_int("AI_MAX_CONCURRENT", 2)                  # تعداد workerهای صف
+AI_QUEUE_MAX = _env_int("AI_QUEUE_MAX", 40)
+AI_GLOBAL_PER_MIN = _env_int("AI_GLOBAL_PER_MIN", 30)
+AI_PLAYER_PER_MIN = _env_int("AI_PLAYER_PER_MIN", 4)
+AI_CACHE_TTL = _env_int("AI_CACHE_TTL", 600)
+AI_TALK_WAIT = _env_int("AI_TALK_WAIT", 10)                           # حداکثر انتظارِ بازیکن برای جوابِ NPC
+
+WORLD_ENABLED = os.getenv("WORLD_ENABLED", "1") != "0"
+WORLD_TICK_SECONDS = _env_int("WORLD_TICK_SECONDS", 300)
+WORLD_TIME_SCALE = _env_int("WORLD_TIME_SCALE", 6)                    # هر ۱ دقیقه واقعی = N دقیقه‌ی دنیا (۶ → هر شبانه‌روز = ۴ ساعت)
+WORLD_AI_DECISIONS_PER_TICK = _env_int("WORLD_AI_DECISIONS_PER_TICK", 2)
+WORLD_EVENT_CHANCE = _env_float("WORLD_EVENT_CHANCE", 0.06)           # شانس ساخت رویداد در هر تیک
+WORLD_EVENT_MAX_ACTIVE = _env_int("WORLD_EVENT_MAX_ACTIVE", 4)
+WORLD_MAX_CATCHUP = _env_int("WORLD_MAX_CATCHUP", 12)                 # بعد از خاموشی حداکثر چند تیک جبران بشه
+WORLD_ANNOUNCE_GROUPS = _env_int("WORLD_ANNOUNCE_GROUPS", 8)          # رویدادهای بزرگ تو چند گروهِ فعال اعلام بشن
+CLASS_SEED_SALT = os.getenv("CLASS_SEED_SALT", "isekai-grave-v1")     # سالتِ ثابت: ساختِ کلاس/چیت قطعی و غیرقابل ریرول

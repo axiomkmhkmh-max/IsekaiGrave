@@ -21,6 +21,7 @@ from market import do_buy, drop_offer
 from marriage import do_divorce, do_marry_info, marriage_answer
 from menus import help_kb, hub_kb, hub_text
 from npc import do_npc, do_trade
+from worldnpc import do_cheat, do_use_cheat, do_world, do_world_npc, ensure_gen_profile
 from quests import do_quests
 from raid import do_boss_call, do_boss_status, do_raid_hit
 from registration import (
@@ -104,8 +105,12 @@ async def handle_cb(cq: CallbackQuery, bot: Bot):
         elif registered:
             await cq.answer("ثبت‌نامت قبلاً انجام شده. 👍", show_alert=True)
         elif act == "sign":
-            await cq.answer("قلم رو بردار… 🩸")
-            await safe_edit(cq.message, reg_text_class(), reg_kb_class(uid))
+            ndoc = await finish_registration(user, None, None)     # 🎲 کلاس/چیت‌اسکیلِ رندوم همین‌جا ساخته میشه
+            if not ndoc:
+                await cq.answer("قبلاً ثبت‌نام شدی.", show_alert=True)
+                return
+            await cq.answer("قرارداد امضا شد! 🎉")
+            await safe_edit(cq.message, reg_done_text(ndoc, None, None), reg_kb_done(uid, True))
         elif act == "cls" and len(parts) >= 4 and parts[2] in CLASSES:
             ndoc = await finish_registration(user, parts[2], None)
             if not ndoc:
@@ -144,6 +149,10 @@ async def handle_cb(cq: CallbackQuery, bot: Bot):
         await do_explore(m, parts[1])
     elif kind == "n" and parts[1] in NPCS:
         await do_npc(m, parts[1])
+    elif kind == "wn" and len(parts) >= 4:
+        await do_world_npc(m, parts[1], parts[2] if parts[2] in ("hi", "rumor", "work") else "hi")
+    elif kind == "ch" and parts[1] == "use":
+        await do_use_cheat(m)
     elif kind == "tr":
         if not await do_trade(m):
             await say(m, "پیشنهادِ معامله‌ای باز نیست؛ شاید قبلاً قبول کردی یا مغازه‌دار منصرف شد. 🧔", "🛒", "معامله", "yellow")
@@ -184,7 +193,12 @@ async def handle_cb(cq: CallbackQuery, bot: Bot):
             await safe_edit(cq.message, panel("green", "🌍", "کجا بریم؟", [
                 "👇 یه مکان انتخاب کن تا ماجراجویی شروع بشه. 🧙 وسط راه ممکنه به آدم‌های زنده‌ی ایسکا بربخوری!\n💅 «هر جا بری، یا بدبخت میشی یا می‌میری. هر دو برای من سرگرم‌کننده‌ست.»",
             ]), kb(*rows, back_kb(uid)))
+        elif act == "world":
+            await do_world(m)
+        elif act == "cheat":
+            await do_cheat(m)
         elif act == "pass":
+            doc = await ensure_gen_profile(doc)
             await m.reply(render_passport(doc), reply_markup=kb(back_kb(uid)))
         elif act == "inv":
             await send_inventory(m, doc)
