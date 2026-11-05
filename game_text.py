@@ -27,7 +27,7 @@ from guilds import (
 )
 from intents import (
     ACCEPT_RE, BLESS_RE, BOARD_RE, BOSS_CALL_RE, BOSS_HIT_RE, BOSS_STATUS_RE, BUY_RE, CAFE_RE,
-    CURSE_RE, DEATH_RE, DEFUSE_RE, DISTRESS_RE, DIVORCE_RE, DUEL_RE, EXEC_RE, GUILD_CREATE_RE,
+    CHURCH_RE, CURSE_RE, DEATH_RE, DEFUSE_RE, DISTRESS_RE, DIVORCE_RE, DUEL_RE, EXEC_RE, GUILD_CREATE_RE,
     GUILD_INVITE_RE, GUILD_JOIN_RE, GUILD_LEAVE_RE, GUILD_ME_RE, GUILD_WAR_RE, HELP_RE, INV_RE,
     INVITE_RE, MARKET_RE, MARRY_ACCEPT_RE, MARRY_DECLINE_RE, MARRY_RE, MENU_RE, NPC_RE, OPEN_RE,
     OPT_IN_RE, OPT_OUT_RE, PASSPORT_RE, QUEST_RE, REG_RE, REPLY_EXEC_RE, SIEGE_RE, SMALL_TALK_HELP,
@@ -59,7 +59,7 @@ def looks_like_game(c: str, n: str, m: Message) -> bool:
     full = (MENU_RE, QUEST_RE, TERR_RE, SIEGE_RE, MARRY_RE, MARRY_ACCEPT_RE, MARRY_DECLINE_RE, DIVORCE_RE,
             BOSS_CALL_RE, BOSS_HIT_RE, BOSS_STATUS_RE, DEATH_RE, PASSPORT_RE, TITLES_RE, INV_RE, INVITE_RE,
             STROLL_RE, DUEL_RE, GUILD_CREATE_RE, GUILD_JOIN_RE, GUILD_WAR_RE, GUILD_ME_RE, GUILD_LEAVE_RE,
-            GUILD_INVITE_RE, EXCH_RE, SELL_RE, FORGE_RE, EQUIP_RE, GS_RE, DONATE_RE, FORT_RE, WORLD_RE, CHEAT_RE)
+            GUILD_INVITE_RE, EXCH_RE, SELL_RE, FORGE_RE, EQUIP_RE, GS_RE, DONATE_RE, FORT_RE, WORLD_RE, CHEAT_RE, CHURCH_RE)
     srch = (WHEEL_RE, BOARD_RE, CAFE_RE, NPC_RE, MARKET_RE, ACCEPT_RE, TRADE_RE)
     if any(r.fullmatch(c) for r in full) or any(r.search(c) for r in srch):
         return True
@@ -248,6 +248,10 @@ async def handle_text(m: Message, bot: Bot):
     # ۷) NPC (قبل از سفر، تا «ورود به کافه» اشتباه تفسیر نشه)
     if CAFE_RE.search(c):
         await do_npc(m, "cafe")
+        return
+    if CHURCH_RE.fullmatch(c):
+        from worldnpc import do_church
+        await do_church(m)
         return
     if nm := NPC_RE.search(c):
         target = nm.group(2)

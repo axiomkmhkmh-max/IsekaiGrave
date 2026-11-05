@@ -201,6 +201,8 @@ async def _http_call(messages: list, max_tokens: int, temperature: float, info: 
             if status == 429:
                 stats["http_429"] += 1
                 rate_limited = True
+                if attempt == 0:      # متنِ خطای OpenRouter (محدودیتِ روزانه‌ی free یا محدودیتِ موقتِ provider) تا علتش از لاگ معلوم بشه
+                    log.warning("OpenRouter 429 detail: %s", _redact(text)[:300])
                 try:
                     delay = float(retry_after) if retry_after else 2.0 * (attempt + 1)
                 except ValueError:

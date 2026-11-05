@@ -154,6 +154,62 @@ class TestIdentity(NpcChat):
         self.assertIn("کاپیتان هِلگا", self.body()["messages"][0]["content"])
 
 
+class TestChurchGoddess(NpcChat):
+    def test_goddess_identity_and_reply(self):
+        self.setup_world()
+        T.FakeSession.script = [T.ok("بشین، چای سرد شد ولی گوش می‌دم")]
+        self.WN.set_talk(11, "goddess", "city")
+        ok, m = self.chat("دلم گرفته")
+        self.assertTrue(ok)
+        sysm = self.body()["messages"][0]["content"]
+        self.assertIn("ایزدبانوی پایان", sysm)
+        self.assertIn("Never speak as any other character or narrator", sysm)
+        for other in ("کاپیتان هِلگا", "اوندین", "گریگور"):
+            self.assertNotIn(other, sysm)
+        self.assertIn("ایزدبانوی پایان", m.replies[0])
+        self.assertIn("چای سرد شد", m.replies[0])
+
+    def test_goddess_fallback_is_her_own_lines(self):
+        self.setup_world()
+        T.FakeSession.script = [T._Resp(503, {})]
+        self.WN.set_talk(11, "goddess", "city")
+        with self.assertLogs("isekai-grave", level="INFO") as logs:
+            ok, m = self.chat("سلام")
+        import content
+        self.assertTrue(any(self.WN.esc(r) in m.replies[0] for r in content.ROASTS))
+        self.assertIn("NPC fallback dialogue used npc=goddess", "\n".join(logs.output))
+
+    def test_church_opens_only_in_city_and_starts_goddess_talk(self):
+        self.setup_world()
+        T.FakeSession.script = [T.ok("خوش اومدی زائر خسته")]
+
+        async def get(uid):
+            return dict(self.doc)
+
+        self.WN.store.get = get
+        self.WN.kb = lambda *a, **k: None
+        self.WN.btn = lambda *a, **k: None
+        m = types.SimpleNamespace(from_user=types.SimpleNamespace(id=11), replies=[])
+
+        async def reply(text, reply_markup=None):
+            m.replies.append(text)
+
+        m.reply = reply
+        T.run(self.WN.do_church(m))
+        self.assertIn("خوش اومدی زائر خسته", m.replies[0])
+        self.assertEqual(self.WN._talk[11]["npc"], "goddess")
+        self.doc["location"] = "forest"
+        m.replies.clear()
+        T.run(self.WN.do_church(m))
+        self.assertIn("پایتخت", m.replies[0])
+
+    def test_church_intent_regex(self):
+        import intents
+        for t in ("کلیسا", "میرم کلیسا", "ورود به کلیسا", "برم به کلیسای ایزدبانو"):
+            self.assertTrue(intents.CHURCH_RE.fullmatch(t), t)
+        self.assertIsNone(intents.CHURCH_RE.fullmatch("چرا کلیسا اینقدر خلوته؟"))
+
+
 class TestFallback(NpcChat):
     def _guard_lines(self):
         names = ("سارا",)

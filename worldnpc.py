@@ -144,9 +144,10 @@ async def world_encounter(doc: dict, biome: str) -> Optional[list]:
 # ───────────────────────────── 🗣 صدای NPC ─────────────────────────────
 def _sysmsg(npc: dict, op: int, phase_fa: str, news: list, mem: str, chat: bool = False) -> str:
     """promptِ سیستمیِ فقط و فقط برای «همین» NPC (هویت/شخصیت/پس‌زمینه از خودِ سند یا seed)."""
+    others = "any other character or narrator" if npc["id"] == "goddess" else "any other character, narrator or the goddess"
     extra = (" The player is talking to YOU right now: answer their message directly, in character, as {n}. "
              "Only claim to remember things listed in Memory; otherwise say in character that you barely know them. "
-             "Never speak as any other character, narrator or goddess.").format(n=npc["name"]) if chat else ""
+             "Never speak as {o}.").format(n=npc["name"], o=others) if chat else ""
     return (
         f"You roleplay {npc['name']}, a {npc['race']} {npc['cls']} ({npc['occupation']}) in a dark-funny Persian text isekai RPG. "
         f"Personality: {', '.join(npc['personality']['traits'])}. Speech style: {npc['personality']['style']} "
@@ -191,6 +192,8 @@ async def npc_voice(npc: dict, doc: dict, topic: str = "hi", say: Optional[str] 
             return esc(txt), True
         reason = info.get("reason") or "empty_or_short_reply"
     log.warning("NPC fallback dialogue used npc=%s reason=%s", npc["id"], reason)
+    if npc.get("fallback"):                                  # NPCهای خارج از seed (ایزدبانو) fallbackِ خودشون رو دارن
+        return esc(random.choice(npc["fallback"])), False
     return esc(WD.fallback_line(npc, pname)), False
 
 
@@ -345,8 +348,23 @@ def current_talk(uid: int, loc: str) -> Optional[dict]:
     return cur
 
 
+def _goddess() -> dict:
+    """⛪ ایزدبانوی پایان (الیسیا) به‌عنوان «شخصیتِ کلیسا». تو دنیای زنده/DB نیست؛ فقط متنِ حرفش AI/fallback میشه."""
+    from content import GODDESS_NAME, GODDESS_TITLE, ROASTS
+    return {
+        "id": "goddess", "name": GODDESS_NAME, "icon": "💅", "race": "goddess", "cls": "gatekeeper of the final gate",
+        "occupation": "goddess", "personality": {"traits": ["خسته", "کنایه‌زن", "مهربانِ پنهان"],
+                                                 "style": "خسته و طعنه‌دار، چای‌به‌دست؛ پشتِ کنایه‌هاش دلسوزیِ پنهانی هست."},
+        "background": f"{GODDESS_TITLE}. هر روحی که بمیره از دروازه‌ی او رد میشه. الان تو کلیسای خودش تو پایتخت درخشان نشسته و با بازیکن حرف می‌زنه.",
+        "goals": ["سرپا نگه داشتنِ روح‌های خسته", "یه چای گرم بدون مزاحم"], "plan": "گوش دادن به دردِ دلِ زائرها",
+        "emotion": "خسته", "opinions": {}, "memories": [], "summary": "", "fallback": list(ROASTS),
+    }
+
+
 def _npc_record(npc_id: str, db_doc: Optional[dict]) -> Optional[dict]:
     """سندِ زنده‌ی NPC؛ اگه تو DB نبود، همون seedِ خودش (هیچ‌وقت NPCِ دیگه)."""
+    if npc_id == "goddess":
+        return _goddess()
     if db_doc and db_doc.get("id") == npc_id:
         return db_doc
     return next((dict(x) for x in WD.NPC_SEEDS if x["id"] == npc_id), None)
@@ -359,11 +377,11 @@ async def do_npc_chat(m, doc: dict, text: str) -> bool:
     if not cur or not clean_text(text, 200):
         return False
     npc_id = cur["npc"]
-    db_doc = await store.wnpcs.find_one({"id": npc_id})
+    db_doc = None if npc_id == "goddess" else await store.wnpcs.find_one({"id": npc_id})
     npc = _npc_record(npc_id, db_doc)
     if not npc:
         return False
-    log.info("NPC identity selected npc=%s source=%s", npc_id, "db" if db_doc else "seed")
+    log.info("NPC identity selected npc=%s source=%s", npc_id, "db" if db_doc else "builtin")
     line, ai = await npc_voice(npc, doc, "chat", say=text, history=cur["hist"])
     cur["hist"] = (cur["hist"] + [(text, html.unescape(line))])[-2:]
     cur["t"] = time.time()
@@ -372,8 +390,31 @@ async def do_npc_chat(m, doc: dict, text: str) -> bool:
     foot = None
     if os.getenv("NPC_AI_DEBUG") == "1":                      # فقط برای تست: مشخص می‌کنه جواب از AI بود یا fallback
         foot = "🤖 پاسخ از AI" if ai else "📜 پاسخ جایگزین (AI جواب نداد؛ لاگ Railway رو ببین)"
-    await m.reply(panel("purple", npc["icon"], npc["name"], [f"🗨 «{line}»"], foot), reply_markup=_talk_kb(npc, uid, cur["loc"]))
+    markup = kb([btn("🌙 منو", f"m:main:{uid}", "blue")]) if npc_id == "goddess" else _talk_kb(npc, uid, cur["loc"])
+    await m.reply(panel("purple", npc["icon"], npc["name"], [f"🗨 «{line}»"], foot), reply_markup=markup)
     return True
+
+
+async def do_church(m):
+    """⛪ کلیسای ایزدبانو (تو پایتخت): گفتگوی آزادِ بازیکن با ایزدبانو؛ متنِ حرفش رو AI می‌نویسه، هیچ اثرِ مکانیکی‌ای نداره."""
+    uid = m.from_user.id
+    doc = await store.get(uid)
+    if not doc:
+        return
+    loc = doc.get("location") or "city"
+    back = kb([btn("🌙 منو", f"m:main:{uid}", "blue")])
+    if loc != "city":
+        await m.reply(panel("purple", "⛪", "کلیسای ایزدبانو", ["کلیسا تو «پایتخت درخشان»ه. اول به شهر برگرد (بنویس «سفر به شهر»). 🏰"]), reply_markup=back)
+        return
+    set_talk(uid, "goddess", loc)
+    g = _goddess()
+    log.info("NPC identity selected npc=goddess source=builtin")
+    line, ai = await npc_voice(g, doc, "hi")
+    foot = ("🤖 پاسخ از AI" if ai else "📜 پاسخ جایگزین (AI جواب نداد؛ لاگ Railway رو ببین)") if os.getenv("NPC_AI_DEBUG") == "1" else None
+    await m.reply(panel("purple", "⛪", "کلیسای ایزدبانو", [
+        "درهای سنگینِ کلیسا باز میشه؛ بوی شمع و چای سرد می‌پیچه و ایزدبانو روی تختِ استخوانی نشسته. 🕯",
+        f"💅 <b>{esc(g['name'])}:</b> «{line}»", "┈┈┈┈┈┈┈┈┈┈",
+        "🙏 هر چی تو دلته بنویس (تو پیوی، یا تو گروه ریپلای به همین پیام) تا ایزدبانو جواب بده."], foot), reply_markup=back)
 
 
 # ───────────────────────────── 🌐 پنلِ جهان ─────────────────────────────
