@@ -10,7 +10,7 @@ ENV:
   ADMIN_USER_IDS      (optional) آیدی عددی ادمین‌ها با کاما: "123456789,987654321"
   LOG_CHANNEL         (optional, default: @isekailog) کانال لاگِ کارهای بازیکن‌ها؛ ربات باید ادمین کانال باشه. خالی = خاموش
   LOG_NAV             (optional, default: 0) 1 = کلیک‌های ناوبری منو هم لاگ بشه
-  CEREBRAS_API_KEY / CEREBRAS_MODEL / CEREBRAS_BASE_URL / AI_ENABLED  (optional) هوش مصنوعیِ NPCها؛ بدونِ کلید دنیا با پایتون کار می‌کنه
+  OPENROUTER_API_KEY / OPENROUTER_MODEL / OPENROUTER_BASE_URL / AI_ENABLED  (optional) هوش مصنوعیِ NPCها؛ بدونِ کلید یا مدل، دنیا با پایتون کار می‌کنه
   WORLD_ENABLED / WORLD_TICK_SECONDS / WORLD_TIME_SCALE / WORLD_EVENT_CHANCE  (optional) دنیای زنده
 
 نکته: از BotFather گزینه‌ی Group Privacy رو Disable کن تا ربات پیام‌های عادی گروه رو ببینه.
@@ -58,6 +58,7 @@ async def main():
     dp.include_router(router)
     await setup_commands(bot)
     await bot.delete_webhook(drop_pending_updates=True)
+    aiclient.log_status()           # 🤖 وضعیتِ AI (کلید/مدل) یک‌بار تو لاگ؛ هیچ کلیدی چاپ نمیشه
     await logchannel.start(bot)
     await recover_exchange(bot)     # 🪦 معاملاتِ نیمه‌کاره (کرش) تمیز میشن
     await recover_battles(bot)      # ⚔️ نبردهای در جریان ادامه پیدا می‌کنن

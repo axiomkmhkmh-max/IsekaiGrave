@@ -1,4 +1,4 @@
-"""کلاینت Cerebras (API سازگار با OpenAI): صف، محدودیت نرخ، کش، retry، backoff و fallback.
+"""کلاینت OpenRouter (API سازگار با OpenAI): صف، محدودیت نرخ، کش، retry، backoff، circuit-breaker و fallback.
 
 قانون: هر تابعِ اینجا اگه AI خاموش/در دسترس‌نبودن/محدود بود None برمی‌گردونه و صدازننده باید fallbackِ پایتونی داشته باشه.
 خروجیِ AI فقط «متن/داده» ـه؛ هیچ‌وقت کد اجرا نمی‌شه و هیچ‌جا مستقیم به دیتابیس نمی‌ره (همه‌چیز قبل از استفاده اعتبارسنجی میشه).
@@ -14,10 +14,10 @@ from typing import Optional
 
 from config import (
     AI_CACHE_TTL, AI_ENABLED, AI_GLOBAL_PER_MIN, AI_MAX_CONCURRENT, AI_PLAYER_PER_MIN, AI_QUEUE_MAX,
-    AI_RETRIES, AI_TIMEOUT, CEREBRAS_API_KEY, CEREBRAS_BASE_URL, CEREBRAS_MODEL, log,
+    AI_RETRIES, AI_TIMEOUT, OPENROUTER_API_KEY, OPENROUTER_BASE_URL, OPENROUTER_MODEL, log,
 )
 
-stats = {"ok": 0, "fail": 0, "cache_hit": 0, "rate_limited": 0, "queue_full": 0, "http_429": 0}
+stats = {"ok": 0, "fail": 0, "cache_hit": 0, "rate_limited": 0, "queue_full": 0, "http_429": 0, "http_401": 0, "http_other": 0}
 
 _session = None
 _queue: Optional[asyncio.Queue] = None
@@ -25,11 +25,80 @@ _workers: list = []
 _global_hits: deque = deque()
 _player_hits: dict = {}
 _cache: dict = {}
-_blocked_until = 0.0          # بعد از 429، تا این زمان هیچ درخواستی نمی‌ره
+_blocked_until = 0.0          # بعد از 429/خطای احراز هویت/قطعیِ پشت‌سرهم، تا این زمان هیچ درخواستی نمی‌ره
+_fail_streak = 0              # تعداد شکست‌های پشت‌سرهم (با اولین موفقیت صفر میشه)
+_merge_system = False         # بعضی مدل‌های رایگان نقشِ system رو قبول نمی‌کنن → ادغام با پیامِ user
+_warned: set = set()
+_COOLDOWNS = (30, 120, 600, 1800, 3600)   # ثانیه؛ پلکانیِ circuit-breaker (سهمیه‌ی رایگان تموم شد → کمتر می‌کوبیم)
+
+_KEY_RE = re.compile(r"sk-or-[A-Za-z0-9_\-]+|Bearer\s+\S+", re.I)
+
+
+def _redact(text) -> str:
+    """هر چیزی که شبیه کلید باشه قبل از لاگ حذف میشه (کلید واقعی + الگوی sk-or-… + هدرِ Bearer)."""
+    t = str(text)
+    if OPENROUTER_API_KEY:
+        t = t.replace(OPENROUTER_API_KEY, "***")
+    return _KEY_RE.sub("***", t)
+
+
+def _warn_once(key: str, msg: str, *args):
+    if key in _warned:
+        return
+    _warned.add(key)
+    log.warning(_redact(msg % args if args else msg))
+
+
+def config_problem() -> Optional[str]:
+    """None = تنظیمات کامله (یا AI عمداً خاموشه). وگرنه متنِ راهنما برای ادمین/لاگ."""
+    if not AI_ENABLED:
+        return None
+    if not OPENROUTER_API_KEY:
+        return "OPENROUTER_API_KEY تنظیم نشده؛ AI خاموش است و دنیا با پایتون/پاسخ‌های جایگزین کار می‌کند."
+    if not OPENROUTER_MODEL:
+        return ("OPENROUTER_MODEL تنظیم نشده؛ AI خاموش است. شناسه‌ی دقیقِ یک مدل رایگان را از openrouter.ai/models "
+                "(فیلتر Free؛ شناسه معمولاً با «:free» تموم میشه) کپی کن و تو Variables بذار. مدلی حدس زده نمیشه.")
+    return None
+
+
+def log_status():
+    """یک‌بار موقع استارت صدا زده میشه؛ هیچ کلیدی چاپ نمیشه."""
+    if not AI_ENABLED:
+        log.info("AI خاموشه (AI_ENABLED=0): دنیا فقط با پایتون کار می‌کنه.")
+        return
+    prob = config_problem()
+    if prob:
+        _warn_once("config", prob)
+    else:
+        log.info("AI فعال: OpenRouter، مدل=%s", OPENROUTER_MODEL)
 
 
 def ai_available() -> bool:
-    return bool(AI_ENABLED and CEREBRAS_API_KEY)
+    if not AI_ENABLED:
+        return False
+    prob = config_problem()
+    if prob:
+        _warn_once("config", prob)
+        return False
+    return True
+
+
+def _strip_think(s: str) -> str:
+    """بعضی مدل‌های رایگان بلوکِ <think>…</think> تو جواب می‌ذارن؛ حذفش می‌کنیم (بلوکِ نیمه‌کاره = خالی)."""
+    s = re.sub(r"<think>.*?</think>", "", s, flags=re.S | re.I)
+    s = re.sub(r"<think>.*", "", s, flags=re.S | re.I)
+    return s.strip()
+
+
+def _merge_system_msgs(messages: list) -> list:
+    sysm = "\n".join(str(m.get("content", "")) for m in messages if m.get("role") == "system")
+    rest = [dict(m) for m in messages if m.get("role") != "system"]
+    if sysm:
+        if rest and rest[0].get("role") == "user":
+            rest[0]["content"] = f"{sysm}\n\n{rest[0].get('content', '')}"
+        else:
+            rest.insert(0, {"role": "user", "content": sysm})
+    return rest
 
 
 def clean_text(s, n: int = 200) -> str:
@@ -67,41 +136,99 @@ async def _get_session():
     return _session
 
 
-async def _http_call(messages: list, max_tokens: int, temperature: float) -> Optional[str]:
+def _note_failure(rate_limited: bool = False):
+    """شکستِ یک درخواستِ کامل (بعد از retryها). 429 فوراً cooldown می‌ده؛ بقیه بعد از ۳ شکستِ پشت‌سرهم."""
+    global _fail_streak, _blocked_until
+    _fail_streak += 1
+    n = _fail_streak if rate_limited else _fail_streak - 2
+    if n >= 1:
+        cd = _COOLDOWNS[min(n - 1, len(_COOLDOWNS) - 1)]
+        _blocked_until = max(_blocked_until, time.time() + cd)
+        log.warning("AI: %d شکستِ پشت‌سرهم%s → %d ثانیه استراحت (بازی با fallback ادامه داره)",
+                    _fail_streak, " (محدودیت/سهمیه)" if rate_limited else "", cd)
+
+
+def _hard_block(seconds: int, key: str, msg: str):
     global _blocked_until
+    _blocked_until = max(_blocked_until, time.time() + seconds)
+    _warn_once(key, msg)
+
+
+async def _http_call(messages: list, max_tokens: int, temperature: float) -> Optional[str]:
+    global _blocked_until, _fail_streak, _merge_system
     import aiohttp
-    url = f"{CEREBRAS_BASE_URL}/chat/completions"
-    headers = {"Authorization": f"Bearer {CEREBRAS_API_KEY}", "Content-Type": "application/json"}
-    body = {"model": CEREBRAS_MODEL, "messages": messages, "max_tokens": max_tokens, "temperature": temperature}
+    url = f"{OPENROUTER_BASE_URL}/chat/completions"
+    headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"}
+    merged = _merge_system
+    rate_limited = False
     for attempt in range(AI_RETRIES + 1):
         if time.time() < _blocked_until:
             return None
+        body = {"model": OPENROUTER_MODEL, "messages": _merge_system_msgs(messages) if merged else messages,
+                "max_tokens": max_tokens, "temperature": temperature}
         try:
             sess = await _get_session()
             async with sess.post(url, json=body, headers=headers) as r:
-                if r.status == 200:
+                status = r.status
+                retry_after = r.headers.get("Retry-After")
+                data, text = None, ""
+                if status == 200:
                     data = await r.json(content_type=None)
-                    return (data.get("choices") or [{}])[0].get("message", {}).get("content")
-                if r.status == 429:
-                    stats["http_429"] += 1
-                    try:
-                        delay = float(r.headers.get("Retry-After", 2 * (attempt + 1)))
-                    except ValueError:
-                        delay = 2.0 * (attempt + 1)
-                    delay = min(max(delay, 1.0), 10.0)
-                    _blocked_until = time.time() + delay
-                    await asyncio.sleep(delay)
-                    continue
-                if r.status >= 500:
-                    await asyncio.sleep(1.5 ** attempt)
-                    continue
-                log.warning("AI HTTP %s: %s", r.status, (await r.text())[:200])
+                    err = data.get("error") if isinstance(data, dict) else None
+                    if err:                      # OpenRouter گاهی با 200 هم خطا برمی‌گردونه
+                        code = err.get("code") if isinstance(err, dict) else None
+                        status = int(code) if str(code).isdigit() else 502
+                        text = str(err)
+                else:
+                    text = await r.text()
+            if status == 200:
+                content = ((data.get("choices") or [{}])[0].get("message") or {}).get("content") if isinstance(data, dict) else None
+                content = _strip_think(content) if isinstance(content, str) else ""
+                if not content:
+                    stats["http_other"] += 1
+                    return None                  # جوابِ خالی (مثلاً مدلِ reasoning با max_tokens کم) → fallback
+                _fail_streak = 0
+                if merged:
+                    _merge_system = True
+                return content
+            if status == 429:
+                stats["http_429"] += 1
+                rate_limited = True
+                try:
+                    delay = float(retry_after) if retry_after else 2.0 * (attempt + 1)
+                except ValueError:
+                    delay = 2.0 * (attempt + 1)
+                delay = min(max(delay, 1.0), 10.0)
+                _blocked_until = time.time() + delay
+                await asyncio.sleep(delay)
+                continue
+            if status in (401, 403):
+                stats["http_401"] += 1
+                _hard_block(900, "auth", "AI HTTP %d: کلید OpenRouter نامعتبر/غیرفعاله؛ OPENROUTER_API_KEY رو چک کن (۱۵ دقیقه درخواستی نمی‌ره)." % status)
                 return None
+            if status == 402:
+                stats["http_other"] += 1
+                _hard_block(900, "credits", "AI HTTP 402: اعتبار/سهمیه‌ی OpenRouter کافی نیست؛ مدلِ رایگان (:free) انتخاب کن یا بعداً تلاش کن.")
+                return None
+            if status == 404:
+                stats["http_other"] += 1
+                _hard_block(900, "model", "AI HTTP 404: مدل «%s» پیدا نشد یا فعلاً endpoint نداره؛ OPENROUTER_MODEL رو با شناسه‌ی دقیقِ openrouter.ai/models عوض کن." % OPENROUTER_MODEL)
+                return None
+            if status == 400 and not merged and any(m.get("role") == "system" for m in messages):
+                merged = True                    # احتمالاً مدل نقشِ system رو نمی‌پذیره → یک‌بار با ادغام تلاش کن
+                continue
+            if status >= 500 or status == 408:
+                await asyncio.sleep(1.5 ** attempt)
+                continue
+            stats["http_other"] += 1
+            log.warning("AI HTTP %s: %s", status, _redact(text)[:200])
+            return None
         except (asyncio.TimeoutError, aiohttp.ClientError):
             await asyncio.sleep(1.0 + attempt)
-        except Exception:
-            log.exception("AI call crashed")
+        except Exception as e:
+            log.error("AI call crashed: %s: %s", type(e).__name__, _redact(e)[:200])
             return None
+    _note_failure(rate_limited)
     return None
 
 
@@ -134,12 +261,12 @@ def _ensure_workers():
 
 async def ask(messages: list, *, uid: Optional[int] = None, max_tokens: int = 200, temperature: float = 0.8,
               cache_key: Optional[str] = None, wait: Optional[float] = None) -> Optional[str]:
-    """یک درخواست به Cerebras از طریق صف. None = AI در دسترس/مجاز نیست (fallback بزن)."""
+    """یک درخواست به OpenRouter از طریق صف. None = AI در دسترس/مجاز نیست (fallback بزن)."""
     if not ai_available():
         return None
     ck = None
     if cache_key:
-        ck = hashlib.sha1(f"{CEREBRAS_MODEL}|{cache_key}".encode()).hexdigest()
+        ck = hashlib.sha1(f"{OPENROUTER_MODEL}|{cache_key}".encode()).hexdigest()
         hit = _cache.get(ck)
         if hit and time.time() - hit[0] < AI_CACHE_TTL:
             stats["cache_hit"] += 1

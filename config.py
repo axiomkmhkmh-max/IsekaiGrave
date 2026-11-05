@@ -119,7 +119,7 @@ class Runtime:
 
 runtime = Runtime()
 
-# ───────────────────────────── 🤖 هوش مصنوعی (Cerebras) و 🌍 دنیای زنده ─────────────────────────────
+# ───────────────────────────── 🤖 هوش مصنوعی (OpenRouter) و 🌍 دنیای زنده ─────────────────────────────
 def _env_float(name: str, default: float) -> float:
     try:
         return float(os.getenv(name, str(default)))
@@ -128,17 +128,17 @@ def _env_float(name: str, default: float) -> float:
 
 
 AI_ENABLED = os.getenv("AI_ENABLED", "1") != "0"                       # ۰ = AI کامل خاموش (دنیا با پایتون کار می‌کنه)
-CEREBRAS_API_KEY = os.getenv("CEREBRAS_API_KEY", "")
-CEREBRAS_BASE_URL = os.getenv("CEREBRAS_BASE_URL", "https://api.cerebras.ai/v1").rstrip("/")
-CEREBRAS_MODEL = os.getenv("CEREBRAS_MODEL", "llama3.1-8b")
-AI_TIMEOUT = _env_int("AI_TIMEOUT", 15)                               # ثانیه برای هر درخواست HTTP
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip()      # فقط از env؛ هیچ‌جا لاگ/چاپ نمیشه
+OPENROUTER_BASE_URL = (os.getenv("OPENROUTER_BASE_URL") or "https://openrouter.ai/api/v1").strip().rstrip("/")
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "").strip()          # شناسه‌ی دقیقِ مدل (مثلاً از openrouter.ai/models با فیلتر Free)؛ پیش‌فرض ندارد
+AI_TIMEOUT = _env_int("AI_TIMEOUT", 30)                               # ثانیه برای هر درخواست HTTP (مدل‌های رایگان کندترن)
 AI_RETRIES = _env_int("AI_RETRIES", 2)
 AI_MAX_CONCURRENT = _env_int("AI_MAX_CONCURRENT", 2)                  # تعداد workerهای صف
 AI_QUEUE_MAX = _env_int("AI_QUEUE_MAX", 40)
-AI_GLOBAL_PER_MIN = _env_int("AI_GLOBAL_PER_MIN", 30)
+AI_GLOBAL_PER_MIN = _env_int("AI_GLOBAL_PER_MIN", 15)                 # مدل‌های رایگانِ OpenRouter ~۲۰ درخواست در دقیقه
 AI_PLAYER_PER_MIN = _env_int("AI_PLAYER_PER_MIN", 4)
 AI_CACHE_TTL = _env_int("AI_CACHE_TTL", 600)
-AI_TALK_WAIT = _env_int("AI_TALK_WAIT", 10)                           # حداکثر انتظارِ بازیکن برای جوابِ NPC
+AI_TALK_WAIT = _env_int("AI_TALK_WAIT", 12)                           # حداکثر انتظارِ بازیکن برای جوابِ NPC
 
 WORLD_ENABLED = os.getenv("WORLD_ENABLED", "1") != "0"
 WORLD_TICK_SECONDS = _env_int("WORLD_TICK_SECONDS", 300)
