@@ -31,12 +31,21 @@ class FakeColl:
         return types.SimpleNamespace(modified_count=0)
 
 
+class _Handle:
+    def __init__(self, box, i):
+        self.box, self.i = box, i
+
+    async def edit_text(self, text, reply_markup=None):
+        self.box[self.i] = text
+
+
 class FakeMsg:
     def __init__(self):
         self.replies = []
 
     async def reply(self, text, reply_markup=None):
         self.replies.append(text)
+        return _Handle(self.replies, len(self.replies) - 1)   # مثل aiogram: پیامِ «فکر می‌کنه» بعداً ویرایش میشه
 
 
 class NpcChat(T.Base):
@@ -119,6 +128,38 @@ class TestIdentity(NpcChat):
         self.assertNotIn("جواب نگهبان", text)
         self.assertIn("اوندین", m.replies[0])
 
+    def test_thinking_message_is_edited_into_answer(self):
+        self.setup_world()
+        T.FakeSession.script = [T.ok("جواب نهایی نگهبان")]
+        self.WN.set_talk(11, "guard", "city")
+        ok, m = self.chat("سلام")
+        self.assertEqual(len(m.replies), 1)                 # یک پیام؛ «فکر می‌کنه» با جواب جایگزین شد
+        self.assertIn("جواب نهایی نگهبان", m.replies[0])
+        self.assertNotIn("فکر می‌کنه", m.replies[0])
+
+    def test_chat_prompt_gives_npc_freedom_but_no_mechanics(self):
+        self.setup_world()
+        T.FakeSession.script = [T.ok("جواب آزاد نگهبان برای تو")]
+        self.WN.set_talk(11, "guard", "city")
+        self.chat("هر چی دوست داری بگو")
+        body = self.body()
+        sysm = body["messages"][0]["content"]
+        self.assertIn("You decide freely", sysm)
+        self.assertIn("Never promise or mention money", sysm)
+        self.assertGreaterEqual(body["max_tokens"], 200)
+
+    def test_fallback_does_not_repeat_same_line_twice(self):
+        self.setup_world()
+        self.WN.set_talk(11, "guard", "city")
+        seen = []
+        for _ in range(6):
+            T.FakeSession.script = [T._Resp(503, {})]
+            self.WN.aiclient._blocked_until = 0.0
+            self.WN.aiclient._fail_streak = 0
+            ok, m = self.chat("سلام")
+            seen.append(m.replies[0])
+        self.assertTrue(all(a != b for a, b in zip(seen, seen[1:])))
+
     def test_history_kept_for_same_npc_only(self):
         self.setup_world()
         T.FakeSession.script = [T.ok("جواب اول نگهبان")]
@@ -196,12 +237,12 @@ class TestChurchGoddess(NpcChat):
 
         m.reply = reply
         T.run(self.WN.do_church(m))
-        self.assertIn("خوش اومدی زائر خسته", m.replies[0])
+        self.assertIn("خوش اومدی زائر خسته", m.replies[-1])
         self.assertEqual(self.WN._talk[11]["npc"], "goddess")
         self.doc["location"] = "forest"
         m.replies.clear()
         T.run(self.WN.do_church(m))
-        self.assertIn("پایتخت", m.replies[0])
+        self.assertIn("پایتخت", m.replies[-1])
 
     def test_church_intent_regex(self):
         import intents
