@@ -12,6 +12,7 @@ import time
 from typing import Optional
 
 import aiclient
+import npcreply
 import worlddata as WD
 from aiclient import clean_text
 from config import AI_TALK_WAIT, CLASS_SEED_SALT, GS, NPC_CITY_CHANCE, NPC_ENCOUNTER_CHANCE, WORLD_TIME_SCALE, log
@@ -143,6 +144,7 @@ async def world_encounter(doc: dict, biome: str) -> Optional[list]:
 
 # ───────────────────────────── 🗣 صدای NPC ─────────────────────────────
 _last_fb: dict = {}
+_last_reason: dict = {}      # npc id → دلیلِ آخرین fallback (برای نمایش تو حالت دیباگ)
 
 
 def _sysmsg(npc: dict, op: int, phase_fa: str, news: list, mem: str, chat: bool = False) -> str:
@@ -193,18 +195,22 @@ async def npc_voice(npc: dict, doc: dict, topic: str = "hi", say: Optional[str] 
                                  wait=AI_TALK_WAIT, tag=f"npc_{'chat' if say else topic}:{npc['id']}", info=info)
         txt = clean_text(txt, 500 if say else 220) if txt else ""
         if len(txt) >= 8:
+            _last_reason.pop(npc["id"], None)
             return esc(txt), True
         reason = info.get("reason") or "empty_or_short_reply"
     log.warning("NPC fallback dialogue used npc=%s reason=%s", npc["id"], reason)
+    _last_reason[npc["id"]] = reason
+    if say:                                                  # جوابِ ربط‌دار از دیتای همین NPC (یا «نفهمیدم»)؛ هیچ‌وقت جمله‌ی بی‌ربط
+        rel = npcreply.relevant_fallback(npc, pname, say, op)
+        if rel:
+            return esc(rel), False
     if npc.get("fallback"):                                  # NPCهای خارج از seed (ایزدبانو) fallbackِ خودشون رو دارن
-        pick = lambda: random.choice(npc["fallback"])        # noqa: E731
+        cands = list(npc["fallback"])
     else:
-        pick = lambda: WD.fallback_line(npc, pname)          # noqa: E731
-    line = pick()
-    for _ in range(6):                                       # پشت‌سرهم یک جمله‌ی تکراری نده
-        if line != _last_fb.get(npc["id"]):
-            break
-        line = pick()
+        key = next((t for t in npc["personality"]["traits"] if t in WD.FALLBACK_LINES), "_")
+        cands = [x.replace("{p}", pname).strip("«»") for x in WD.FALLBACK_LINES[key]]
+    last = _last_fb.get(npc["id"])
+    line = random.choice([c for c in cands if c != last] or cands)   # پشت‌سرهم یک جمله‌ی تکراری نده (قطعی، نه شانسی)
     _last_fb[npc["id"]] = line
     return esc(line), False
 
@@ -382,6 +388,15 @@ def _npc_record(npc_id: str, db_doc: Optional[dict]) -> Optional[dict]:
     return next((dict(x) for x in WD.NPC_SEEDS if x["id"] == npc_id), None)
 
 
+def _foot(npc_id: str, ai: bool) -> Optional[str]:
+    """وقتی جواب از AI نبود، همیشه یه هشدارِ کوتاه (تا بازیکن جمله‌ی آماده رو جوابِ سؤالش نپنداره). NPC_AI_DEBUG=1 → کدِ دلیل هم."""
+    debug = os.getenv("NPC_AI_DEBUG") == "1"
+    if ai:
+        return "🤖 پاسخ از AI" if debug else None
+    s = "⚠️ هوش مصنوعی الان جواب نداد؛ این یه پاسخِ ساده‌ی آماده‌ست."
+    return s + (f" [{_last_reason.get(npc_id, '?')}]" if debug else "")
+
+
 async def _typing(m):
     try:
         await m.bot.send_chat_action(m.chat.id, "typing")
@@ -408,10 +423,14 @@ async def _deliver(m, sent, text: str, markup):
     await m.reply(text, reply_markup=markup)
 
 
-async def do_npc_chat(m, doc: dict, text: str) -> bool:
+async def do_npc_chat(m, doc: dict, text: str, default_npc: Optional[str] = None) -> bool:
     """پیامِ آزادِ بازیکن → جوابِ NPCـی که الان باهاش حرف می‌زنه (AI یا fallbackِ همون NPC). True = جواب داده شد."""
     uid = doc["user_id"]
-    cur = current_talk(uid, doc.get("location") or "city")
+    loc = doc.get("location") or "city"
+    cur = current_talk(uid, loc)
+    if not cur and default_npc and clean_text(text, 200):
+        set_talk(uid, default_npc, loc)                      # مثلاً منشن/ریپلای به ربات → ایزدبانو (به‌جای جمله‌ی رندومِ بی‌ربط)
+        cur = current_talk(uid, loc)
     if not cur or not clean_text(text, 200):
         return False
     npc_id = cur["npc"]
@@ -426,9 +445,7 @@ async def do_npc_chat(m, doc: dict, text: str) -> bool:
     cur["t"] = time.time()
     if db_doc:
         await _touch_talk(db_doc, uid, "chat")
-    foot = None
-    if os.getenv("NPC_AI_DEBUG") == "1":                      # فقط برای تست: مشخص می‌کنه جواب از AI بود یا fallback
-        foot = "🤖 پاسخ از AI" if ai else "📜 پاسخ جایگزین (AI جواب نداد؛ لاگ Railway رو ببین)"
+    foot = _foot(npc_id, ai)
     markup = kb([btn("🌙 منو", f"m:main:{uid}", "blue")]) if npc_id == "goddess" else _talk_kb(npc, uid, cur["loc"])
     await _deliver(m, sent, panel("purple", npc["icon"], npc["name"], [f"🗨 «{line}»"], foot), markup)
     return True
@@ -450,7 +467,7 @@ async def do_church(m):
     log.info("NPC identity selected npc=goddess source=builtin")
     sent = await _thinking(m, "⛪", "کلیسای ایزدبانو")
     line, ai = await npc_voice(g, doc, "hi")
-    foot = ("🤖 پاسخ از AI" if ai else "📜 پاسخ جایگزین (AI جواب نداد؛ لاگ Railway رو ببین)") if os.getenv("NPC_AI_DEBUG") == "1" else None
+    foot = _foot("goddess", ai)
     await _deliver(m, sent, panel("purple", "⛪", "کلیسای ایزدبانو", [
         "درهای سنگینِ کلیسا باز میشه؛ بوی شمع و چای سرد می‌پیچه و ایزدبانو روی تختِ استخوانی نشسته. 🕯",
         f"💅 <b>{esc(g['name'])}:</b> «{line}»", "┈┈┈┈┈┈┈┈┈┈",

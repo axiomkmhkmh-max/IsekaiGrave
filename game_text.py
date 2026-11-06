@@ -327,7 +327,14 @@ async def handle_text(m: Message, bot: Bot):
         except Exception:
             log.exception("npc chat failed")
 
-    # ۱۰) صدا زدن بدون دستور معتبر
+    # ۱۰) صدا زدن بدون دستور معتبر: اگه متنی هست ایزدبانو (AI یا جوابِ ربط‌دار) جواب میده؛ فقط منشنِ خالی جمله‌ی رندوم می‌گیره
+    if (mentioned or replied_to_bot) and me_doc:
+        try:
+            from worldnpc import do_npc_chat
+            if await do_npc_chat(m, me_doc, re.sub(r"@\w+", " ", m.text or ""), default_npc="goddess"):
+                return
+        except Exception:
+            log.exception("goddess chat failed")
     if mentioned or replied_to_bot:
         await m.reply(panel("purple", "💅", GODDESS_NAME, [random.choice(ROASTS)], gline(me_doc)),
                       reply_markup=kb([btn("🌙 پنل‌ها", f"m:main:{uid}", "blue")]))

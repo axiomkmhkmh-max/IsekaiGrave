@@ -251,6 +251,57 @@ class TestChurchGoddess(NpcChat):
         self.assertIsNone(intents.CHURCH_RE.fullmatch("چرا کلیسا اینقدر خلوته؟"))
 
 
+class TestRelevantFallback(NpcChat):
+    """وقتی AI نیست، جواب باید ربط‌دار و از همون NPC باشه (یا صادقانه «نفهمیدم»)."""
+
+    def _down(self, npc, text):
+        self.setup_world()
+        T.FakeSession.script = [T._Resp(503, {})]
+        self.WN.set_talk(11, npc, "city")
+        ok, m = self.chat(text)
+        self.assertTrue(ok)
+        return m.replies[0]
+
+    def test_introduce_and_abilities_question_gets_matching_answer(self):
+        r = self._down("shop", "سلام، خودت رو معرفی کن و در یک جمله بگو الان چه کاری می‌تونی انجام بدی؟")
+        self.assertIn("ولادیکِ بی‌اعتماد", r)
+        self.assertIn("خرید و فروش", r)                      # کارِ تاجر
+        self.assertNotIn("هیچ‌چیز مفت نیست", r)             # همون جمله‌ی بی‌ربطِ اسکرین‌شات
+
+    def test_leave_city_memory_question(self):
+        r = self._down("guard", "اگه از شهر برم چی یادت می‌مونه؟")
+        self.assertIn("کاپیتان هِلگا", r)
+        self.assertIn("ادامه داره", r)
+
+    def test_unknown_question_is_honest_not_random(self):
+        r = self._down("witch", "فلان چیز عجیب درباره‌ی کهکشان")
+        self.assertIn("نفهمیدم", r)
+
+    def test_work_and_rumor_point_to_buttons(self):
+        self.assertIn("📜", self._down("guard", "کاری داری؟"))
+        self.assertIn("🗞", self._down("guard", "چه خبر؟"))
+
+    def test_goddess_answers_relevantly(self):
+        r = self._down("goddess", "چه کاری می‌تونی انجام بدی؟")
+        self.assertIn("ایزدبانوی پایان", r)
+        self.assertIn("گوش می‌دم", r)
+
+    def test_every_npc_answers_about_itself_and_never_leaks_others(self):
+        self.setup_world()
+        import npcreply
+        names = [s["name"] for s in self.WD.NPC_SEEDS]
+        for s in self.WD.NPC_SEEDS:
+            r = npcreply.relevant_fallback(s, "سارا", "خودت رو معرفی کن", 0)
+            self.assertIn(s["name"], r)
+            for other in names:
+                if other != s["name"]:
+                    self.assertNotIn(other, r)
+            self.assertTrue(npcreply.relevant_fallback(s, "سارا", "چه کاری می‌تونی بکنی", 0))
+
+    def test_plain_greeting_still_uses_npc_greeting_line(self):
+        self.assertIsNone(__import__("npcreply").relevant_fallback({"id": "x", "name": "n", "occupation": "guard"}, "سارا", "سلام", 0))
+
+
 class TestFallback(NpcChat):
     def _guard_lines(self):
         names = ("سارا",)
@@ -281,6 +332,27 @@ class TestFallback(NpcChat):
         with self.assertLogs("isekai-grave", level="INFO") as logs:
             ok, m = self.chat("سلام")
         self._assert_guard_fallback(m, logs)
+
+    def test_failure_shows_visible_warning_and_debug_shows_reason(self):
+        self.setup_world()
+        T.FakeSession.script = [T._Resp(503, {})]
+        self.WN.set_talk(11, "guard", "city")
+        ok, m = self.chat("سلام")
+        self.assertIn("هوش مصنوعی الان جواب نداد", m.replies[0])
+        self.assertNotIn("http_503", m.replies[0])            # بدون دیباگ، کدِ فنی نمایش داده نمیشه
+        T.FakeSession.script = [T._Resp(503, {})]
+        self.WN.aiclient._blocked_until = 0.0
+        self.WN.aiclient._fail_streak = 0
+        with mock.patch.dict(os.environ, {"NPC_AI_DEBUG": "1"}):
+            ok, m = self.chat("سلام دوباره")
+        self.assertIn("[http_503]", m.replies[0])
+
+    def test_successful_answer_has_no_warning(self):
+        self.setup_world()
+        T.FakeSession.script = [T.ok("جواب واقعی از مدل برای تو")]
+        self.WN.set_talk(11, "guard", "city")
+        ok, m = self.chat("سلام")
+        self.assertNotIn("هوش مصنوعی الان جواب نداد", m.replies[0])
 
     def test_empty_model_response_falls_back(self):
         self.setup_world()
