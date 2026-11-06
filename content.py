@@ -266,6 +266,9 @@ BIOMES = {
 }
 
 
+from regions_new import apply as _apply_new_regions  # noqa: E402  (🗺 فاز ۱: مناطق جدید + غول‌ها)
+
+_apply_new_regions(BIOMES)
 BIOME_LIST = list(BIOMES.keys())
 
 
