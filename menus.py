@@ -39,7 +39,7 @@ def hub_text(doc: dict) -> str:
     return panel("purple", "🌙", "پنل‌های ایزدبانوی پایان", lines, gline(doc))
 
 
-def after_explore_kb(uid: int, key: str, npcs: Optional[list] = None) -> InlineKeyboardMarkup:
+def after_explore_kb(uid: int, key: str, npcs: Optional[list] = None, trail: bool = False) -> InlineKeyboardMarkup:
     """npcs: کلیدِ NPCهایی که همین الان سر راه بازیکنن (دکمه‌ی گفتگو، بالای بقیه)."""
     from content import NPCS  # import تنبل
     from worldsim import npc_label
@@ -50,6 +50,8 @@ def after_explore_kb(uid: int, key: str, npcs: Optional[list] = None) -> InlineK
         else:                                   # NPCِ زنده‌ی بدونِ مکانیکِ قدیمی (آهنگر، ماجراجو، خنیاگر، …)
             nm, ic = npc_label(k)
             npc_rows.append([btn(f"💬 حرف زدن با {ic} {nm}", f"wn:{k}:hi:{uid}", "purple")])
+    if trail:                                   # 🧭 ردپای ماجرا (expedition.py)
+        npc_rows.insert(0, [btn("🧭 دنبالش برو", f"e:go:0:{uid}", "green")])
     return kb(
         *npc_rows,
         [btn("🌍 دوباره بگرد", f"x:{key}:{uid}", "green"), btn("🎴 کارت من", f"m:pass:{uid}", "blue")],

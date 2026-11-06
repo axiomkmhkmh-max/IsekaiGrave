@@ -7,11 +7,11 @@ from typing import Optional
 
 from aiogram.types import Message
 
-import aiclient
-from aiclient import clean_text
+from advscene import scene as _scene_ai
 
 from config import EXPLORE_COOLDOWN, GS
 from economy import terr_perks
+import expedition
 from content import BIOMES, gline, LORE_LINES, RARITIES, roll_item
 from regions_new import GIANT_MIN_LVL
 from database import store
@@ -31,24 +31,6 @@ from weekly import add_guild_pts
 
 
 _last_explore: dict = {}
-
-
-async def _scene(B: dict, what: str, name: Optional[str], uid: int) -> Optional[str]:
-    """📖 روایتِ ترکیبی: AI یک صحنه‌ی کوتاه می‌نویسه؛ نبود/خطا/کوتاه → None (متنِ ثابت می‌مونه). اثری روی جایزه/نتیجه نداره."""
-    if not aiclient.ai_available():
-        return None
-    what_en = (f"The player is about to face the giant «{name}». Describe its menacing, darkly funny entrance, before any fight."
-               if name else "A short strange lore moment the player witnesses (a rumor, a ruin detail, a weird traveler).")
-    msgs = [
-        {"role": "system", "content": (
-            f"You are the dark-funny narrator of a Persian text isekai RPG. Location: {B['name']}. {what_en} "
-            "Write 1-2 short Persian sentences, no emojis, no numbers, no rewards or instructions, and do not say who wins.")},
-        {"role": "user", "content": "Narrate."},
-    ]
-    ck = f"scene|{B['name']}|{what}|{random.randint(0, 3)}"   # چند نسخه‌ی کش‌شده → صرفه‌جویی در سهمیه‌ی رایگان
-    txt = await aiclient.ask(msgs, uid=uid, max_tokens=140, temperature=0.9, cache_key=ck, wait=5, tag="adv_scene:" + what)
-    txt = clean_text(txt, 220) if txt else ""
-    return txt if len(txt) >= 12 else None
 
 
 def detect_biome(text: str) -> Optional[str]:
@@ -116,7 +98,7 @@ async def do_explore(m: Message, key: str):
         mine = doc.get("level", 1) * 4 + doc.get("survival_rate", 50) / 2 + random.randint(0, 25) + (8 if cls_is(doc, "warrior") else 0)
         theirs = strength + random.randint(0, 25)
         lines.append(f"🐲 <b>غولِ {esc(gname)}</b> جلوت ایستاده! (قدرت {strength})")
-        scene = await _scene(B, "giant", gname, uid)
+        scene = await _scene_ai(B, "giant", gname, uid)
         if scene:
             lines.append(f"📖 <i>{esc(scene)}</i>")
         if mine >= theirs:
@@ -147,7 +129,7 @@ async def do_explore(m: Message, key: str):
         died = True
     else:  # lore
         doc, leveled = await grant(uid, xp=random.randint(6, 14))
-        scene = await _scene(B, "lore", None, uid) if random.random() < 0.4 else None     # روایتِ ترکیبی: گاهی AI
+        scene = await _scene_ai(B, "lore", None, uid) if random.random() < 0.4 else None     # روایتِ ترکیبی: گاهی AI
         lines.append(f"📖 {esc(scene) if scene else random.choice(LORE_LINES)}")
 
     # ماموریت پیرمرد
@@ -194,11 +176,14 @@ async def do_explore(m: Message, key: str):
         met = await roll_encounter(doc, key)          # 🧙 NPCِ زنده‌ی سرِ راه (اگه بود)
         if met:
             lines += ["┈┈┈┈┈┈┈┈┈┈", *[f"👣 {arrive}" for _, arrive in met]]
+        trail = key != "city" and random.random() < expedition.CHANCE      # 🧭 گاهی یه ردپای ماجرا (چندمرحله‌ای، دکمه‌ای)
+        if trail:
+            lines += ["┈┈┈┈┈┈┈┈┈┈", expedition.start_trail(uid, key)]
         lines += ["┈┈┈┈┈┈┈┈┈┈", *stat_lines(doc)]
         doc, new = await refresh_titles(doc)
         text = panel(B["color"], B["icon"], B["name"], lines, gline(doc) if random.random() < 0.3 else None)
         if new:
             text += "\n🏷 <b>لقب جدید:</b> " + "، ".join(f"«{esc(t)}»" for t in new)
-        mk = after_explore_kb(uid, key, [k for k, _ in met])
+        mk = after_explore_kb(uid, key, [k for k, _ in met], trail=trail)
     await m.reply(text, reply_markup=mk)
     await quest_progress(m, "trip")

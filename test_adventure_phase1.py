@@ -29,7 +29,7 @@ def _load():
     stubs["utils"] = u
     p = mock.patch.dict(sys.modules, stubs)
     p.start()
-    for m in ("config", "aiclient", "content", "regions_new", "exploration"):
+    for m in ("config", "aiclient", "content", "regions_new", "advscene", "expedition", "exploration"):
         sys.modules.pop(m, None)
     import exploration
     return exploration, p
@@ -107,9 +107,10 @@ class Base(unittest.TestCase):
                 return [kind]
             return real_choices(population, weights=weights, k=k, **kw)
 
+        aic = sys.modules["advscene"].aiclient             # روایتِ AI تو advscene.py (مشترک بین گشت و سفر)
         with mock.patch.object(E.random, "choices", fake_choices), \
-                mock.patch.object(E.aiclient, "ai_available", return_value=ai_up), \
-                mock.patch.object(E.aiclient, "ask", fake_ask):
+                mock.patch.object(aic, "ai_available", return_value=ai_up), \
+                mock.patch.object(aic, "ask", fake_ask):
             self.loop.run_until_complete(E.do_explore(self.msg, biome))
         return self.replies[-1]
 

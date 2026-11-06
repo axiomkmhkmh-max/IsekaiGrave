@@ -12,6 +12,7 @@ from drops import claim_drop
 from exchange import exchange_cb, exchange_home, gs_panel
 from duels import do_duel_accept
 from exploration import do_explore
+from expedition import expedition_cb
 from forge import forge_cb, forge_home, inv_cb
 from guilds import do_guild_me, do_guild_war
 from intents import SMALL_TALK_HELP
@@ -147,6 +148,8 @@ async def handle_cb(cq: CallbackQuery, bot: Bot):
 
     if kind == "x" and parts[1] in BIOMES:
         await do_explore(m, parts[1])
+    elif kind == "e" and len(parts) >= 4:
+        await expedition_cb(uid, parts[1], parts[2], lambda text, markup: safe_edit(cq.message, text, markup))
     elif kind == "n" and parts[1] in NPCS:
         await do_npc(m, parts[1])
     elif kind == "wn" and len(parts) >= 4:

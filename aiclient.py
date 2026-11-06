@@ -204,11 +204,13 @@ async def _http_call(messages: list, max_tokens: int, temperature: float, info: 
                 if attempt == 0:      # متنِ خطای OpenRouter (محدودیتِ روزانه‌ی free یا محدودیتِ موقتِ provider) تا علتش از لاگ معلوم بشه
                     log.warning("OpenRouter 429 detail: %s", _redact(text)[:300])
                 try:
-                    delay = float(retry_after) if retry_after else 2.0 * (attempt + 1)
+                    delay = float(retry_after) if retry_after else 1.0
                 except ValueError:
-                    delay = 2.0 * (attempt + 1)
-                delay = min(max(delay, 1.0), 10.0)
+                    delay = 1.0
+                delay = min(max(delay, 1.0), 3.0)
                 _blocked_until = time.time() + delay
+                if attempt >= 1:          # فقط «یک» تلاشِ مجدد؛ محدودیتِ بالادستیِ مدل‌های free معمولاً چند دقیقه می‌مونه → بازیکن رو معطل نکن
+                    break
                 await asyncio.sleep(delay)
                 continue
             if status in (401, 403):

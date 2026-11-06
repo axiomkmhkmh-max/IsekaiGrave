@@ -244,7 +244,7 @@ class TestErrors(Base):
         FakeSession.script = [_Resp(429, {}, {})]
         with mock.patch("asyncio.sleep", self._nosleep), self.assertLogs("isekai-grave", level="WARNING"):
             self.assertIsNone(run(ai.ask(MSGS)))
-        self.assertEqual(len(FakeSession.calls), 3)          # 1 + 2 retry
+        self.assertEqual(len(FakeSession.calls), 2)          # 1 + فقط ۱ تلاشِ مجدد (بازیکن معطل نمیشه)
         self.assertGreater(ai._blocked_until, time.time() + 20)
         n = len(FakeSession.calls)
         self.assertIsNone(run(ai.ask(MSGS, cache_key="x")))
