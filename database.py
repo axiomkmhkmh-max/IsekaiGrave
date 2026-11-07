@@ -31,6 +31,7 @@ class Store:
         self.sieges = db["sieges"]          # 🏰 محاصره‌ها
         self.wnpcs = db["wnpcs"]            # 🌍 NPCهای زنده (حافظه، روابط، مکان، اهداف)
         self.wevents = db["wevents"]        # 🌍 رویدادهای جهان + تاریخچه
+        self.bounties = db["bounties"]      # 🎯 جایزه‌ی سر (skirmish.py)
 
     async def ensure_indexes(self):
         await self.users.create_index("user_id", unique=True)
@@ -55,6 +56,8 @@ class Store:
         await self.sieges.create_index("key", unique=True, partialFilterExpression={"status": "open"},
                                        name="one_open_siege_per_territory")
         await self.wnpcs.create_index("id", unique=True)
+        await self.bounties.create_index([("target", 1), ("status", 1)])
+        await self.bounties.create_index([("status", 1), ("expires_at", 1)])
         await self.wevents.create_index("id", unique=True)
         await self.wevents.create_index([("status", 1), ("region", 1)])
         # کاربرهای قدیمی (قبل از سیستم ثبت‌نام) رو خودکار «ثبت‌شده» حساب کن
