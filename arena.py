@@ -1,0 +1,877 @@
+"""🏟 میدانِ نبرد — لایه‌ی تلگرام و دیتابیسِ «بازی‌های ریپلایی» (قوانینِ خالص تو clash.py ـه).
+
+چی داره:
+• ⚔️ حمله‌ی ژستی (کلش): مهاجم یکی از ۳ ژست رو مخفی می‌زنه، مدافع ۴۵ ثانیه وقت داره دفاعش رو انتخاب کنه؛
+  مثلثِ ژست‌ها برتری می‌ده، بعدش نبردِ رشته‌ی سرنوشت تموم می‌کنه. مدافعِ موفق هم پاداش می‌گیره (غارت، XP، RP).
+• 🥋 تمرین: همون کلش ولی بدونِ ضرر و غارت (از سطح ۱؛ مخصوص تازه‌کارها و دوستانه).
+• 😏 تحقیر: طعنه‌ی بامزه؛ به طرف ۱ ساعت حقِ انتقام (بدونِ محدودیتِ جفت) می‌ده.
+• ✊✋✌️ شرط‌بندی: سنگ‌کاغذ‌قیچی با GS؛ پات تو «امانت» می‌مونه و پرداخت‌ها idempotent ـن.
+• 🏅 رتبه‌ی نام‌آوری (RP)، 🔥 زنجیره‌ی پیروزی، 📜 نبردنامه و 🔥 انتقامِ یک‌کلیکی تو پنلِ «میدان».
+
+امنیت (همه ثابت و سقف‌دار):
+• هر برخورد با یک «claim» اتمیک روی وضعیت (wait → resolving → done) حل میشه؛ پس جایزه/تاوان دقیقاً یک‌بار.
+• شارژ/کولداونِ مهاجم موقعِ ثبتِ ژست خرج میشه؛ خرابی وسطِ راه فقط برخورد رو منقضی می‌کنه، پولی گم نمیشه.
+• GS انتقالی با debit شرطی، سقفِ غارت، کفِ ۵۰ GS برای قربانی و دفترِ تراکنش؛ بقا هیچ‌وقت زیر ۵٪ نمیره.
+• شرط‌بندی: امانتِ هر دو طرف با مارکرِ تک‌سندی (sk_pay) کم/پس داده میشه؛ ریکاوریِ استارت دوباره‌پرداختی نداره.
+"""
+
+import asyncio
+import random
+import time
+from datetime import timedelta
+from typing import Optional
+
+from aiogram import Bot
+from aiogram.enums import ChatType
+from bson import ObjectId
+from pymongo import ReturnDocument
+
+from battle import _Shim
+from battle_engine import MAX_SOUL, pct, run_ai
+from clash import (
+    ATT, CLASH_LINES, DEF, RANK_REWARD, RANK_UP_LINES, RPS, TAUNTS, TRIANGLE_HELP, apply_edge, attack_rp,
+    auto_defense, clash_result, defend_rp, habit_line, rank_index, rank_label, rank_name, rank_progress, rps_payouts,
+    rps_result, streak_banner, streak_break_reward, streak_loot_mult,
+)
+from config import GS, log
+from database import store
+from economy import burn, credit, debit, log_tx
+from players import adjust_survival, grant, refresh_titles
+from quests import quest_progress
+from render import display
+from skirmish import (
+    CHARGE_SECS, GOLD_FLOOR, MAX_CHARGES, MIN_LEVEL, PAIR_COOLDOWN, REVENGE_SECS, SHIELD_SECS, SURV_FLOOR, LEVEL_GAP,
+    _Locks, _claim_bounties, _dur, _eligible, _expire_bounties, _fighter, _loot_amount, _regen,
+)
+from ui import CbMsg, btn, hp_bar, kb, panel, say, show
+from utils import day_key, esc, is_group, spawn, utcnow, week_key
+from weekly import add_guild_pts
+
+CLASH_WINDOW = 45                # ثانیه‌ی دفاعِ مدافع
+PICK_TTL_MIN = 3                 # عمرِ پنلِ انتخابِ ژست (دقیقه)
+STALE_SECS = 15 * 60             # برخوردِ باز/نیمه‌کاره بعد از این مدت منقضی میشه
+SPAR_PAIR_COOLDOWN = 5 * 60
+SPAR_DAILY_REWARDS = 5           # تمرین‌هایی که تو روز XP/RP می‌دن
+SPAR_XP_WIN, SPAR_XP_LOSE = 8, 5
+TAUNT_COOLDOWN, TAUNT_DAILY, TAUNT_REV_SECS = 10 * 60, 6, 3600
+DEF_LOOT_CAP, DEF_LOOT_PCT = 15, 0.05     # پاداشِ مدافعِ موفق (از GS مهاجم)
+LOOT_CEIL = 90                   # سقفِ مطلقِ غارتِ یک حمله (حتی با زنجیره و بحرانی)
+BET_MIN, BET_MAX, BET_DAILY, BET_WINDOW = 10, 200, 600, 90
+LOG_KEEP = 12
+
+_KIND_CODE = {"attack": "a", "spar": "s"}
+_CODE_KIND = {v: k for k, v in _KIND_CODE.items()}
+_ATT_SHORT = {"h": "سنگین", "q": "سریع", "f": "فریب"}
+_DEF_SHORT = {"g": "سپر", "e": "جاخالی", "c": "ضدحمله"}
+_ATT_COLOR = {"h": "red", "q": "green", "f": "blue"}
+_DEF_COLOR = {"g": "blue", "e": "green", "c": "red"}
+
+
+def _nm(doc: Optional[dict]) -> str:
+    return esc((doc or {}).get("first_name") or "ناشناس")
+
+
+def _tsmin() -> int:
+    return int(time.time() // 60)
+
+
+def _ago(t: float) -> str:
+    s = max(0, int(time.time() - float(t)))
+    if s < 90:
+        return "همین الان"
+    if s < 3600:
+        return f"{s // 60} دقیقه پیش"
+    if s < 86400:
+        return f"{s // 3600} ساعت پیش"
+    return f"{s // 86400} روز پیش"
+
+
+# ───────────────────────────── 🏅 RP و لاگ ─────────────────────────────
+async def _add_rp(uid: int, delta: int) -> dict:
+    """RP (کلی + هفتگی) رو اتمیک عوض می‌کنه (هیچ‌وقت منفی نمیشه). رتبه‌ی جدید برای بار اول جایزه‌ی GS داره."""
+    wk = week_key()
+    before = await store.users.find_one_and_update(
+        {"user_id": uid},
+        [{"$set": {
+            "sk_rp": {"$max": [0, {"$add": [{"$ifNull": ["$sk_rp", 0]}, delta]}]},
+            "sk_rp_w": {"$cond": [{"$eq": ["$sk_rp_wk", wk]},
+                                  {"$max": [0, {"$add": [{"$ifNull": ["$sk_rp_w", 0]}, delta]}]}, {"$max": [0, delta]}]},
+            "sk_rp_wk": wk,
+        }}],
+        return_document=ReturnDocument.BEFORE)
+    old = int((before or {}).get("sk_rp", 0))
+    new = max(0, old + delta)
+    info = {"rp": new, "delta": new - old, "up": None}
+    oi, ni = rank_index(old), rank_index(new)
+    if before and ni > oi:
+        first = await store.users.find_one_and_update(
+            {"user_id": uid, "sk_rank_max": {"$not": {"$gte": ni}}}, {"$set": {"sk_rank_max": ni}})
+        reward = RANK_REWARD[ni] if first is not None else 0
+        if reward:
+            await grant(uid, gold=reward)
+        info["up"] = (ni, reward)
+    return info
+
+
+def _rankup(name: str, info: dict) -> list:
+    if not info.get("up"):
+        return []
+    ni, reward = info["up"]
+    return [f"🎖 <b>{name}</b> به رتبه‌ی {rank_name(ni)} رسید!" + (f" 🪙 +{reward} {GS}" if reward else "")]
+
+
+async def _push_log(uid: int, text: str):
+    await store.users.update_one({"user_id": uid}, {"$push": {"sk_log": {"$each": [{"t": int(time.time()), "x": text}], "$slice": -LOG_KEEP}}})
+
+
+# ───────────────────────────── 🔎 پیش‌شرط‌ها ─────────────────────────────
+async def _busy_fight(*uids) -> bool:
+    return bool(await store.clashes.count_documents({
+        "kind": {"$in": ["attack", "spar"]}, "status": {"$in": ["wait", "resolving"]}, "uids": {"$in": list(uids)},
+        "created_at": {"$gt": utcnow() - timedelta(seconds=STALE_SECS)}}))
+
+
+async def _busy_bet(*uids) -> bool:
+    return bool(await store.clashes.count_documents({
+        "kind": "rps", "status": {"$in": ["hold", "wait", "matching", "settling"]}, "uids": {"$in": list(uids)},
+        "created_at": {"$gt": utcnow() - timedelta(seconds=STALE_SECS)}}))
+
+
+def _checks(kind: str, adoc: dict, tdoc: dict, now: float) -> tuple:
+    """(خطا یا None، انتقام؟، شارژ، مبنای زمانیِ شارژ)."""
+    tid = tdoc["user_id"]
+    if adoc.get("opted_out"):
+        return "خودت «محافظت» رو فعال کردی؛ اول بنویس «برگردم به بازی». 🛡", False, 0, now
+    if tdoc.get("opted_out"):
+        return f"{display(tdoc)} «محافظت» فعال کرده؛ بهش نمیشه دست زد. 🛡", False, 0, now
+    if kind == "spar":
+        if tdoc.get("registered") is False or adoc.get("registered") is False:
+            return "حریف هنوز ثبت‌نام نکرده. 📜", False, 0, now
+        last = float((adoc.get("sk_spar") or {}).get(str(tid), 0))
+        if now - last < SPAR_PAIR_COOLDOWN:
+            return f"تازه با همین نفر تمرین کردی؛ {_dur(SPAR_PAIR_COOLDOWN - (now - last))} دیگه. ⏳", False, 0, now
+        return None, False, 0, now
+    for who, d in (("تو", adoc), (None, tdoc)):
+        why = _eligible(d)
+        if why:
+            return (f"{who}: " if who else "") + why, False, 0, now
+    revenge = float((adoc.get("sk_rev") or {}).get(str(tid), 0)) > now
+    if not revenge and int(tdoc.get("level", 1)) < int(adoc.get("level", 1)) - LEVEL_GAP:
+        return "این بازیکن خیلی از تو ضعیف‌تره؛ زورگویی تو ایسکا هم مد نیست. 😒", False, 0, now
+    if float(tdoc.get("sk_shield", 0)) > now:
+        return f"{display(tdoc)} تازه ضربه خورده و داره نفس می‌گیره؛ {_dur(tdoc['sk_shield'] - now)} دیگه. 🛡", False, 0, now
+    last = float((adoc.get("sk_pair") or {}).get(str(tid), 0))
+    if not revenge and now - last < PAIR_COOLDOWN:
+        return f"به همین نفر تازه حمله کردی؛ {_dur(PAIR_COOLDOWN - (now - last))} دیگه. ⏳", False, 0, now
+    charges, base_t = _regen(adoc, now)
+    if charges <= 0:
+        return f"شارژِ حمله نداری؛ بعدی تا {_dur(base_t + CHARGE_SECS - now)} دیگه. 🔋", False, 0, base_t
+    return None, revenge, charges, base_t
+
+
+def _def_kb(oid, tid: int):
+    return kb([btn(f"{DEF[c][0]} {_DEF_SHORT[c]}", f"sk:df:{c}:{oid}:{tid}", _DEF_COLOR[c]) for c in DEF])
+
+
+def _pick_kb(kind: str, aid: int, tid: int):
+    ts = _tsmin()
+    return kb([btn(f"{ATT[c][0]} {_ATT_SHORT[c]}", f"sk:ap:{_KIND_CODE[kind]}:{c}:{tid}:{ts}:{aid}", _ATT_COLOR[c]) for c in ATT])
+
+
+# ───────────────────────────── ⚔️ حمله / 🥋 تمرین: پنلِ انتخابِ ژست ─────────────────────────────
+async def attack_open(m, adoc: dict, tdoc: dict, kind: str = "attack"):
+    """مرحله‌ی ۱: چک‌های سریع + پنلِ انتخابِ ژستِ مهاجم (استیت‌لس؛ شارژ تا انتخاب خرج نمیشه)."""
+    aid, tid = adoc["user_id"], tdoc["user_id"]
+    now = time.time()
+    icon, title = ("⚔️", "حمله") if kind == "attack" else ("🥋", "تمرین")
+    err, revenge, charges, _ = _checks(kind, adoc, tdoc, now)
+    if err:
+        return await say(m, err, icon, title, "orange")
+    if await _busy_fight(aid, tid):
+        return await say(m, "یکی از شما هنوز تو یه برخوردِ دیگه‌ست؛ چند لحظه صبر کنین. ⏳", icon, title, "blue")
+    high = bool(tdoc.get("sk_war")) or revenge
+    lines = [f"{display(adoc, link=True)} ⚔️ {display(tdoc, link=True)}" + ("  🔥 انتقام!" if revenge else ""),
+             TRIANGLE_HELP]
+    hl = habit_line(tdoc.get("sk_df"), DEF, _nm(tdoc))
+    if hl:
+        lines.append(hl)
+    if kind == "attack":
+        lines.append(f"🔋 شارژ: {charges}/{MAX_CHARGES}" + (" · 💰 غارتِ بیشتر (جنگ/انتقام)" if high else ""))
+    else:
+        lines.append("🥋 دوستانه: بدونِ ضرر و غارت؛ فقط XP و RP")
+    await m.reply(panel("orange" if kind == "attack" else "green", icon, f"{title} — ژستت رو انتخاب کن", lines,
+                        "🎯 ژستِ تو مخفی می‌مونه تا حریف دفاعش رو بزنه.\n⏳ این پنل ۳ دقیقه اعتبار داره."),
+                  reply_markup=_pick_kb(kind, aid, tid))
+
+
+async def _end_panel(cq, text: str, color: str = "orange", icon: str = "⚔️", title: str = "حمله"):
+    try:
+        await cq.message.edit_text(panel(color, icon, title, [text]))
+    except Exception as e:
+        log.debug("arena panel edit failed: %s", e)
+
+
+async def _commit(cq, bot: Bot, kind: str, st: str, aid: int, tid: int):
+    """مرحله‌ی ۲: ثبتِ ژست، خرجِ شارژ و ساختِ برخورد؛ پنل برای دفاعِ مدافع تعویض میشه."""
+    now = time.time()
+    icon, title = ("⚔️", "حمله") if kind == "attack" else ("🥋", "تمرین")
+    async with _Locks(aid, tid):
+        adoc, tdoc = await store.get(aid), await store.get(tid)
+        if not adoc or not tdoc:
+            await cq.answer("بازیکن پیدا نشد.", show_alert=True)
+            return
+        if kind == "attack":
+            await _expire_bounties()
+        err, revenge, charges, base_t = _checks(kind, adoc, tdoc, now)
+        if not err and await _busy_fight(aid, tid):
+            err = "یکی از شما هنوز تو یه برخوردِ دیگه‌ست. ⏳"
+        if err:
+            await cq.answer()
+            await _end_panel(cq, err, "blue", icon, title)
+            return
+        upd: dict = {"$inc": {f"sk_st.{st}": 1}}
+        if kind == "attack":
+            upd["$set"] = {"sk_charges": charges - 1, "sk_charge_t": (now if charges >= MAX_CHARGES else base_t), f"sk_pair.{tid}": now}
+            if revenge:
+                upd["$unset"] = {f"sk_rev.{tid}": ""}
+        else:
+            upd["$set"] = {f"sk_spar.{tid}": now}
+        await store.users.update_one({"user_id": aid}, upd)
+        res = await store.clashes.insert_one({
+            "kind": kind, "chat_id": cq.message.chat.id, "msg_id": cq.message.message_id, "a": aid, "t": tid, "uids": [aid, tid],
+            "st": st, "revenge": revenge, "status": "wait", "created_at": utcnow(),
+            "deadline": utcnow() + timedelta(seconds=CLASH_WINDOW)})
+    oid = res.inserted_id
+    lines = [f"⚠️ {display(adoc, link=True)} داره به {display(tdoc, link=True)} " + ("حمله می‌کنه!" if kind == "attack" else "تمرین پیشنهاد می‌ده!"),
+             "🤫 ژستِ مهاجم مخفیه؛ حدس بزن و دفاعت رو انتخاب کن:", TRIANGLE_HELP]
+    hl = habit_line(adoc.get("sk_st"), ATT, _nm(adoc))
+    if hl:
+        lines.append(hl)
+    try:
+        await cq.message.edit_text(
+            panel("red" if kind == "attack" else "green", icon, f"{title} — نوبتِ دفاع", lines,
+                  f"⏳ {CLASH_WINDOW} ثانیه وقت داری. جواب ندی، دفاعِ خودکار (کلاس‌محور) اجرا میشه و پاداشِ دفاع رو از دست میدی."),
+            reply_markup=_def_kb(oid, tid))
+    except Exception as e:
+        log.debug("clash panel edit failed: %s", e)
+    await cq.answer("ژستت ثبت شد! حالا نوبتِ دفاعِ حریفه. 🎯")
+    spawn(_watch_clash(bot, oid, CLASH_WINDOW + 1))
+
+
+async def _defend(cq, bot: Bot, code: str, oid, uid: int):
+    if code not in DEF:
+        await cq.answer()
+        return
+    clash = await store.clashes.find_one_and_update(
+        {"_id": oid, "status": "wait", "t": uid, "kind": {"$in": ["attack", "spar"]}},
+        {"$set": {"status": "resolving", "dfn": code, "auto": False}}, return_document=ReturnDocument.AFTER)
+    if not clash:
+        await cq.answer("این برخورد تموم شده یا مال تو نیست. ⏳")
+        return
+    await cq.answer(f"{DEF[code][0]} {DEF[code][1]}!")
+    await store.users.update_one({"user_id": uid}, {"$inc": {f"sk_df.{code}": 1}})
+    await _resolve(bot, clash)
+
+
+async def _watch_clash(bot: Bot, oid, delay: float):
+    try:
+        await asyncio.sleep(delay)
+        c = await store.clashes.find_one({"_id": oid, "status": "wait"})
+        if not c:
+            return
+        tdoc = await store.get(c["t"])
+        code = auto_defense((tdoc or {}).get("cls"))
+        c = await store.clashes.find_one_and_update(
+            {"_id": oid, "status": "wait"}, {"$set": {"status": "resolving", "dfn": code, "auto": True}},
+            return_document=ReturnDocument.AFTER)
+        if c:
+            await _resolve(bot, c)
+    except Exception:
+        log.exception("clash watch failed")
+
+
+# ───────────────────────────── 🧮 حلِ برخورد ─────────────────────────────
+def _loot_amt(tdoc: dict, high: bool, mult: float) -> int:
+    g = int(tdoc.get("gold", 0))
+    return max(0, min(int(_loot_amount(tdoc, high) * mult), LOOT_CEIL, g - GOLD_FLOOR))
+
+
+async def _show(bot: Bot, clash: dict, text: str, markup):
+    try:
+        await bot.edit_message_text(text, chat_id=clash["chat_id"], message_id=clash["msg_id"], reply_markup=markup)
+    except Exception as e:
+        log.debug("clash result edit failed: %s", e)
+        try:
+            await bot.send_message(clash["chat_id"], text, reply_markup=markup)
+        except Exception:
+            log.exception("clash result send failed")
+
+
+async def _resolve(bot: Bot, clash: dict):
+    """فقط کسی صدا می‌زنه که وضعیت رو اتمیک به resolving برده؛ پس هر برخورد دقیقاً یک‌بار حل میشه."""
+    oid = clash["_id"]
+    try:
+        text, markup, after = await _resolve_inner(clash)
+    except Exception:
+        log.exception("clash resolve failed")
+        await store.clashes.update_one({"_id": oid}, {"$set": {"status": "failed", "closed_at": utcnow()}})
+        return
+    await store.clashes.update_one({"_id": oid}, {"$set": {"status": "done", "closed_at": utcnow()}})
+    await _show(bot, clash, text, markup)
+    for kind, uid in after:
+        try:
+            await quest_progress(_Shim(bot, clash["chat_id"], uid), kind, uid=uid)
+        except Exception:
+            log.exception("clash quest hook failed")
+    for uid in clash.get("uids", []):
+        try:
+            gd = await store.get(uid)
+            if gd:
+                await refresh_titles(gd)
+        except Exception:
+            log.exception("clash titles failed")
+
+
+async def _resolve_inner(clash: dict) -> tuple:
+    kind, aid, tid, st, dfn = clash["kind"], clash["a"], clash["t"], clash["st"], clash["dfn"]
+    auto = bool(clash.get("auto"))
+    revenge = bool(clash.get("revenge"))
+    res = clash_result(st, dfn)
+    crit = res > 0 and not auto
+    read = res < 0 and not auto
+    now = time.time()
+    async with _Locks(aid, tid):
+        adoc, tdoc = await store.get(aid), await store.get(tid)
+        fa, fb = await _fighter(adoc), await _fighter(tdoc)
+        first = apply_edge(fa, fb, res, MAX_SOUL)
+        win = run_ai(fa, fb, first=first) == 0
+        an, dn = _nm(adoc), _nm(tdoc)
+        ai, att_name = ATT[st]
+        di, def_name = DEF[dfn]
+        if res > 0:
+            edge = "🎯 خوندش! +۲🕯 و شروعِ اول" + (" · 💥 ضربه‌ی بحرانی" if crit else " (دفاعِ خودکار: بدونِ بحرانی)")
+        elif res < 0:
+            edge = f"🧠 {dn} خوندش! +۲🕯 برای مدافع و ضربه‌های مهاجم ۱۵٪ ضعیف‌تر"
+        else:
+            edge = "⚖️ مساوی؛ نبردِ عادی"
+        head = [f"{display(adoc, link=True)} ⚔️ {display(tdoc, link=True)}" + ("  🔥 انتقام!" if revenge else ""),
+                f"{ai} {an}: {att_name}   ⟷   {di} {dn}: {def_name}" + (" 🤖" if auto else ""),
+                CLASH_LINES[(st, dfn)].format(a=f"<b>{an}</b>", d=f"<b>{dn}</b>"), edge,
+                f"💥 ضربه‌ها: {an} {fa['dealt']} · {dn} {fb['dealt']}" + (" · 🔁 بازتولد" if fa["used_echo"] or fb["used_echo"] else ""),
+                "┈┈┈┈┈┈┈┈┈┈"]
+        if kind == "spar":
+            return await _spar_effects(clash, adoc, tdoc, win, head)
+
+        arp, drp = int(adoc.get("sk_rp", 0)), int(tdoc.get("sk_rp", 0))
+        a_streak0, d_streak0 = int(adoc.get("sk_streak", 0)), int(tdoc.get("sk_streak", 0))
+        high = bool(tdoc.get("sk_war")) or revenge
+        lines, after, rank_lines = list(head), [("attack", aid)], []
+        if win:
+            streak = a_streak0 + 1
+            mult = streak_loot_mult(streak) * (1.25 if crit else 1.0)
+            dmg = 5 + int(10 * pct(fa))
+            if not high:
+                dmg = max(3, dmg // 2)
+            if crit:
+                dmg = int(dmg * 1.5)
+            dmg = min(dmg, max(0, int(tdoc.get("survival_rate", 100)) - SURV_FLOOR))
+            if dmg:
+                tdoc = await adjust_survival(tid, -dmg, "sk_hits_taken")
+            loot, amt = 0, _loot_amt(tdoc, high, mult)
+            if amt and await debit(tid, amt, "skirmish_lost", burn_it=False):
+                await credit(aid, amt, "skirmish_loot")
+                loot = amt
+            bounty = await _claim_bounties(tid, aid)
+            brk_gs, brk_xp = streak_break_reward(d_streak0)
+            if brk_gs:
+                await grant(aid, gold=brk_gs, xp=brk_xp)
+            await store.users.update_one({"user_id": tid}, {
+                "$set": {"sk_shield": now + SHIELD_SECS, f"sk_rev.{aid}": now + REVENGE_SECS, "sk_streak": 0},
+                "$inc": {"sk_lost": loot, "sk_def_losses": 1}})
+            await store.users.update_one({"user_id": aid}, {
+                "$set": {"sk_streak": streak}, "$max": {"sk_best": streak}, "$inc": {"sk_wins": 1, "sk_loot": loot + bounty}})
+            await grant(aid, xp=random.randint(10, 20) + (5 if crit else 0))
+            ia = await _add_rp(aid, attack_rp(True, arp, drp, crit, streak))
+            it = await _add_rp(tid, defend_rp(False, drp, arp))
+            await add_guild_pts(adoc.get("guild"), 3)
+            after.append(("atk_win", aid))
+            lines += [f"🏆 <b>{an} پیروز شد!</b>",
+                      f"💀 {display(tdoc)} −{dmg}٪ بقا {hp_bar(int(tdoc.get('survival_rate', 0)))}"]
+            if loot:
+                lines.append(f"🪙 غارت: +{loot} {GS}" + (f" · زنجیره ×{streak_loot_mult(streak):.1f}" if streak > 1 else "")
+                             + (" · حالت جنگ/انتقام" if high else ""))
+            if bounty:
+                lines.append(f"🎯 جایزه‌ی سر: +{bounty} {GS}")
+            if brk_gs:
+                lines.append(f"⛓ زنجیره‌ی {d_streak0}تاییِ {dn} رو شکستی! 🪙 +{brk_gs} {GS} · ⭐ +{brk_xp} XP")
+            ban = streak_banner(streak)
+            lines.append(f"🔥 زنجیره‌ی {an}: <b>{streak}</b>" + (f"  {ban}" if ban else ""))
+            lines.append(f"🏅 RP: {an} {ia['delta']:+d} · {dn} {it['delta']:+d}")
+            lines.append(f"🛡 {dn} ۲۰ دقیقه سپر گرفت؛ ولی ۲۴ ساعت حق انتقام داره!")
+            rank_lines = _rankup(an, ia) + _rankup(dn, it)
+            await _push_log(tid, f"⚔️ {an} بهت زد: −{dmg}٪ بقا" + (f"، −{loot} {GS}" if loot else "") + (" (بحرانی!)" if crit else ""))
+            await _push_log(aid, f"🏆 به {dn} حمله کردی و بردی" + (f": +{loot} {GS}" if loot else ""))
+            markup = kb([btn("🔥 انتقام", f"sk:rv:{aid}:{tid}", "red"), btn("🏟 میدان", "sk:ar:0", "blue")])
+            color = "red"
+        else:
+            dmg = min(random.randint(3, 8), max(0, int(adoc.get("survival_rate", 100)) - SURV_FLOOR))
+            if dmg:
+                await adjust_survival(aid, -dmg, "sk_hits_taken")
+            streak = d_streak0 + 1
+            brk_gs, brk_xp = streak_break_reward(a_streak0)
+            if brk_gs:
+                await grant(tid, gold=brk_gs, xp=brk_xp)
+            dloot = 0
+            if not auto:
+                g = int(adoc.get("gold", 0))
+                amt = max(0, min(int(DEF_LOOT_CAP * (1.5 if read else 1.0)), int(g * DEF_LOOT_PCT), g - GOLD_FLOOR))
+                if amt and await debit(aid, amt, "skirmish_def_lost", burn_it=False):
+                    await credit(tid, amt, "skirmish_def_loot")
+                    dloot = amt
+            await store.users.update_one({"user_id": aid}, {"$set": {"sk_streak": 0}, "$inc": {"sk_losses": 1}})
+            await store.users.update_one({"user_id": tid}, {
+                "$set": {"sk_streak": streak}, "$max": {"sk_best": streak}, "$inc": {"sk_def_wins": 1, "sk_loot": dloot}})
+            await grant(tid, xp=(4 if auto else 8 + (5 if read else 0)))
+            ia = await _add_rp(aid, attack_rp(False, arp, drp))
+            it = await _add_rp(tid, defend_rp(True, drp, arp, read))
+            await add_guild_pts(tdoc.get("guild"), 2)
+            after.append(("defend", tid))
+            lines += [f"🛡 <b>{dn} دفاع کرد!</b> حمله‌ی {an} شکست خورد.", f"🩸 {an} −{dmg}٪ بقا بابت حمله‌ی ناموفق."]
+            if dloot:
+                lines.append(f"🪙 پاداشِ دفاع: {dn} +{dloot} {GS}" + (" (خوندنِ کاملِ حرکت ×۱٫۵)" if read else ""))
+            if brk_gs:
+                lines.append(f"⛓ زنجیره‌ی {a_streak0}تاییِ {an} شکست! {dn}: 🪙 +{brk_gs} {GS} · ⭐ +{brk_xp} XP")
+            if auto:
+                lines.append("🤖 دفاعِ خودکار بود؛ پاداشِ کاملِ دفاع ندارد.")
+            ban = streak_banner(streak)
+            if streak > 1:
+                lines.append(f"🔥 زنجیره‌ی {dn}: <b>{streak}</b>" + (f"  {ban}" if ban else ""))
+            lines.append(f"🏅 RP: {an} {ia['delta']:+d} · {dn} {it['delta']:+d}")
+            rank_lines = _rankup(an, ia) + _rankup(dn, it)
+            await _push_log(aid, f"🛡 {dn} حمله‌ات رو دفع کرد: −{dmg}٪ بقا" + (f"، −{dloot} {GS}" if dloot else ""))
+            await _push_log(tid, f"🏆 حمله‌ی {an} رو دفع کردی" + (f": +{dloot} {GS}" if dloot else ""))
+            markup = kb([btn("🏟 میدان", "sk:ar:0", "blue")])
+            color = "blue"
+        if rank_lines:
+            lines += rank_lines + [random.choice(RANK_UP_LINES)]
+        lines.append(f"🔋 شارژ حمله‌ی {an}: {max(0, _regen(await store.get(aid), now)[0])}/{MAX_CHARGES}")
+        return panel(color, "⚔️", "حمله!" if win else "دفاعِ موفق", lines), markup, after
+
+
+async def _spar_effects(clash: dict, adoc: dict, tdoc: dict, win: bool, head: list) -> tuple:
+    aid, tid = adoc["user_id"], tdoc["user_id"]
+    today = day_key()
+    an, dn = _nm(adoc), _nm(tdoc)
+    lines, after = list(head), [("spar", aid), ("spar", tid)]
+    winner, loser = (adoc, tdoc) if win else (tdoc, adoc)
+    lines.append(f"🏆 <b>{_nm(winner)}</b> تمرین رو برد! (دوستانه؛ هیچ ضرری نداره)")
+    for d, is_win in ((winner, True), (loser, False)):
+        n = int(d.get("sk_spar_n", 0)) if d.get("sk_spar_day") == today else 0
+        if n < SPAR_DAILY_REWARDS:
+            await store.users.update_one({"user_id": d["user_id"]}, {"$set": {"sk_spar_day": today, "sk_spar_n": n + 1}})
+            await grant(d["user_id"], xp=SPAR_XP_WIN if is_win else SPAR_XP_LOSE)
+            if is_win:
+                info = await _add_rp(d["user_id"], 1)
+                lines.append(f"⭐ {_nm(d)}: +{SPAR_XP_WIN} XP · 🏅 +1 RP")
+                lines += _rankup(_nm(d), info)
+            else:
+                lines.append(f"⭐ {_nm(d)}: +{SPAR_XP_LOSE} XP")
+        else:
+            lines.append(f"😴 {_nm(d)}: سقفِ پاداشِ تمرینِ امروز پر شده ({SPAR_DAILY_REWARDS} بار)")
+    await _push_log(aid, f"🥋 با {dn} تمرین کردی: " + ("بردی" if win else "باختی"))
+    await _push_log(tid, f"🥋 با {an} تمرین کردی: " + ("باختی" if win else "بردی"))
+    return panel("green", "🥋", "تمرین تموم شد", lines), kb([btn("🏟 میدان", "sk:ar:0", "blue")]), after
+
+
+# ───────────────────────────── 😏 تحقیر ─────────────────────────────
+async def do_taunt(m, adoc: dict, tdoc: dict):
+    aid, tid = adoc["user_id"], tdoc["user_id"]
+    now, today = time.time(), day_key()
+    if tdoc.get("opted_out"):
+        return await say(m, f"{display(tdoc)} «محافظت» فعال کرده؛ طعنه‌ات به دیوار خورد. 🛡", "😏", "تحقیر", "blue")
+    if adoc.get("opted_out"):
+        return await say(m, "خودت «محافظت» رو فعال کردی؛ اول بنویس «برگردم به بازی». 🛡", "😏", "تحقیر", "blue")
+    if tdoc.get("registered") is False:
+        return await say(m, "این بازیکن هنوز ثبت‌نام نکرده. 📜", "😏", "تحقیر", "orange")
+    async with _Locks(aid):
+        adoc = await store.get(aid)
+        if now - float(adoc.get("sk_taunt_t", 0)) < TAUNT_COOLDOWN:
+            return await say(m, f"زبونت هنوز داغه؛ {_dur(TAUNT_COOLDOWN - (now - adoc['sk_taunt_t']))} دیگه. 😏", "😏", "تحقیر", "blue")
+        n = int(adoc.get("sk_taunt_n", 0)) if adoc.get("sk_taunt_day") == today else 0
+        if n >= TAUNT_DAILY:
+            return await say(m, f"امروز {TAUNT_DAILY} بار طعنه زدی؛ بقیه هم نفس بکشن. 🌙", "😏", "تحقیر", "blue")
+        await store.users.update_one({"user_id": aid}, {"$set": {"sk_taunt_t": now, "sk_taunt_day": today, "sk_taunt_n": n + 1}})
+    await store.users.update_one({"user_id": tid}, {"$max": {f"sk_rev.{aid}": now + TAUNT_REV_SECS}})
+    await _push_log(tid, f"😏 {_nm(adoc)} تحقیرت کرد؛ ۱ ساعت حقِ انتقام داری")
+    line = random.choice(TAUNTS).format(a=f"<b>{_nm(adoc)}</b>", d=display(tdoc, link=True))
+    await m.reply(panel("orange", "😏", "تحقیر!", [line, f"🔥 {display(tdoc)} یه ساعت حقِ انتقام داره (بدونِ محدودیتِ سطح و کولداونِ جفت و با غارتِ بیشتر)."]),
+                  reply_markup=kb([btn("🔥 انتقام", f"sk:rv:{aid}:{tid}", "red")]))
+
+
+# ───────────────────────────── ✊✋✌️ شرط‌بندی ─────────────────────────────
+_PAY_ALL = ("hold", "wait", "matching", "settling", "expiring")
+
+
+async def _hold(uid: int, amount: int, cid, tag: str) -> bool:
+    """امانتِ اتمیک و idempotent (مارکرِ تک‌سندی)."""
+    res = await store.users.update_one(
+        {"user_id": uid, "gold": {"$gte": amount}, "sk_pay": {"$ne": f"{cid}:{tag}"}},
+        {"$inc": {"gold": -amount}, "$push": {"sk_pay": {"$each": [f"{cid}:{tag}"], "$slice": -40}}})
+    if res.modified_count:
+        await log_tx(uid, -amount, "rps_stake", str(cid))
+        return True
+    return False
+
+
+async def _pay(uid: int, amount: int, cid, tag: str, reason: str) -> bool:
+    if amount <= 0:
+        return False
+    res = await store.users.update_one(
+        {"user_id": uid, "sk_pay": {"$ne": f"{cid}:{tag}"}},
+        {"$inc": {"gold": amount}, "$push": {"sk_pay": {"$each": [f"{cid}:{tag}"], "$slice": -40}}})
+    if res.modified_count:
+        await log_tx(uid, amount, reason, str(cid))
+        return True
+    return False
+
+
+async def _refund(uid: int, amount: int, cid, hold_tag: str, ref_tag: str) -> bool:
+    """فقط اگه امانت واقعاً گرفته شده و هنوز پس داده نشده."""
+    res = await store.users.update_one(
+        {"user_id": uid, "sk_pay": {"$all": [f"{cid}:{hold_tag}"], "$ne": f"{cid}:{ref_tag}"}},
+        {"$inc": {"gold": amount}, "$push": {"sk_pay": {"$each": [f"{cid}:{ref_tag}"], "$slice": -40}}})
+    if res.modified_count:
+        await log_tx(uid, amount, "rps_refund", str(cid))
+        return True
+    return False
+
+
+def _bet_checks(adoc: dict, tdoc: dict, amount: int) -> Optional[str]:
+    if not BET_MIN <= amount <= BET_MAX:
+        return f"مبلغِ شرط بین {BET_MIN} تا {BET_MAX} {GS} باشه. 🎲"
+    if adoc.get("opted_out") or tdoc.get("opted_out"):
+        return "یکی از شما «محافظت» فعال کرده؛ شرط‌بندی نمیشه. 🛡"
+    for d in (adoc, tdoc):
+        if int(d.get("level", 1)) < MIN_LEVEL or d.get("registered") is False:
+            return f"شرط‌بندی از سطح {MIN_LEVEL} و فقط بینِ ثبت‌نام‌شده‌هاست. 🐣"
+    return None
+
+
+def _bet_today(doc: dict) -> int:
+    return int(doc.get("sk_bet_amt", 0)) if doc.get("sk_bet_day") == day_key() else 0
+
+
+async def _bump_bet(uid: int, amount: int):
+    today = day_key()
+    doc = await store.get(uid)
+    n = _bet_today(doc or {})
+    await store.users.update_one({"user_id": uid}, {"$set": {"sk_bet_day": today, "sk_bet_amt": n + amount}})
+
+
+async def bet_open(m, adoc: dict, tdoc: dict, amount: int):
+    aid, tid = adoc["user_id"], tdoc["user_id"]
+    err = _bet_checks(adoc, tdoc, amount)
+    if not err and _bet_today(adoc) + amount > BET_DAILY:
+        err = f"سقفِ شرط‌بندیِ روزانه {BET_DAILY} {GS}ه (امروز {_bet_today(adoc)} شرط بستی). 🌙"
+    if not err and int(adoc.get("gold", 0)) < amount:
+        err = "موجودیت برای این شرط کافی نیست. 🪙"
+    if not err and await _busy_bet(aid, tid):
+        err = "یکی از شما تو یه شرطِ بازه؛ صبر کنین. ⏳"
+    if err:
+        return await say(m, err, "🎲", "شرط‌بندی", "orange")
+    ts = _tsmin()
+    row = [btn(f"{RPS[x][0]} {RPS[x][1]}", f"sk:rp:{x}:{tid}:{amount}:{ts}:{aid}", "blue") for x in RPS]
+    await m.reply(panel("yellow", "🎲", "شرط‌بندی: سنگ‌کاغذ‌قیچی", [
+        f"{display(adoc, link=True)} 🆚 {display(tdoc, link=True)}",
+        f"🪙 هر کدوم {amount} {GS} · برنده {amount * 2 - max(1, amount * 2 * 5 // 100)} {GS} می‌بره (۵٪ کارمزدِ سوخته)",
+        "⚖️ مساوی = پول‌ها برمی‌گرده."], "✊ حرکتت رو انتخاب کن؛ مخفی می‌مونه. (۳ دقیقه اعتبار)"), reply_markup=kb(row))
+
+
+async def _bet_commit(cq, bot: Bot, x: str, aid: int, tid: int, amount: int):
+    async with _Locks(aid):
+        adoc, tdoc = await store.get(aid), await store.get(tid)
+        err = _bet_checks(adoc, tdoc, amount) if adoc and tdoc else "بازیکن پیدا نشد."
+        if not err and _bet_today(adoc) + amount > BET_DAILY:
+            err = f"سقفِ شرط‌بندیِ روزانه {BET_DAILY} {GS}ه. 🌙"
+        if not err and await _busy_bet(aid, tid):
+            err = "یکی از شما تو یه شرطِ بازه. ⏳"
+        if err:
+            await cq.answer()
+            await _end_panel(cq, err, "blue", "🎲", "شرط‌بندی")
+            return
+        oid = ObjectId()
+        await store.clashes.insert_one({
+            "_id": oid, "kind": "rps", "chat_id": cq.message.chat.id, "msg_id": cq.message.message_id, "a": aid, "t": tid,
+            "uids": [aid, tid], "amount": amount, "pick_a": x, "status": "hold", "created_at": utcnow(),
+            "deadline": utcnow() + timedelta(seconds=BET_WINDOW)})
+        if not await _hold(aid, amount, oid, "ha"):
+            await store.clashes.update_one({"_id": oid}, {"$set": {"status": "void"}})
+            await cq.answer()
+            await _end_panel(cq, "موجودیت برای این شرط کافی نیست. 🪙", "orange", "🎲", "شرط‌بندی")
+            return
+        await store.clashes.update_one({"_id": oid, "status": "hold"}, {"$set": {"status": "wait"}})
+        await _bump_bet(aid, amount)
+    row = [btn(f"{RPS[c][0]} {RPS[c][1]}", f"sk:rr:{c}:{oid}:{tid}", "blue") for c in RPS]
+    try:
+        await cq.message.edit_text(panel("yellow", "🎲", "چالشِ شرط‌بندی!", [
+            f"{display(adoc, link=True)} روی {amount} {GS} با {display(tdoc, link=True)} شرط بست!",
+            "حرکتش مخفیه؛ حرکتت رو بزن تا شرط قبول بشه (هر دو امانتِ مساوی می‌ذارین)."],
+            f"⏳ {BET_WINDOW} ثانیه وقت داری؛ وگرنه شرط لغو و پولِ حریف برمی‌گرده."),
+            reply_markup=kb(row, [btn("❌ رد می‌کنم", f"sk:rn:{oid}:{tid}", "red")]))
+    except Exception as e:
+        log.debug("bet panel edit failed: %s", e)
+    await cq.answer("حرکتت ثبت شد و امانت گرفته شد. 🎲")
+    spawn(_watch_bet(bot, oid, BET_WINDOW + 1))
+
+
+async def _bet_edit(bot: Bot, c: dict, text: str, markup=None):
+    await _show(bot, c, text, markup)
+
+
+async def _refund_all(c: dict, why: str):
+    cid, amt = c["_id"], int(c["amount"])
+    await _refund(c["a"], amt, cid, "ha", "xa")
+    await _refund(c["t"], amt, cid, "ht", "xt")
+    await store.clashes.update_one({"_id": cid}, {"$set": {"status": why, "closed_at": utcnow()}})
+
+
+async def _watch_bet(bot: Bot, oid, delay: float):
+    try:
+        await asyncio.sleep(delay)
+        c = await store.clashes.find_one_and_update({"_id": oid, "kind": "rps", "status": "wait"}, {"$set": {"status": "expiring"}},
+                                                    return_document=ReturnDocument.AFTER)
+        if c:
+            await _refund_all(c, "expired")
+            await _bet_edit(bot, c, panel("blue", "⌛", "شرط منقضی شد", ["حریف جواب نداد؛ پولِ امانت برگشت."]))
+    except Exception:
+        log.exception("bet watch failed")
+
+
+async def _bet_decline(cq, bot: Bot, oid, uid: int):
+    c = await store.clashes.find_one_and_update({"_id": oid, "kind": "rps", "status": "wait", "t": uid}, {"$set": {"status": "expiring"}},
+                                                return_document=ReturnDocument.AFTER)
+    if not c:
+        await cq.answer("این شرط تموم شده یا مال تو نیست. ⏳")
+        return
+    await _refund_all(c, "declined")
+    await cq.answer("شرط رد شد.")
+    await _bet_edit(bot, c, panel("blue", "🚫", "شرط رد شد", ["حریف قبول نکرد؛ پولِ امانت برگشت."]))
+
+
+async def _bet_answer(cq, bot: Bot, x: str, oid, uid: int):
+    if x not in RPS:
+        await cq.answer()
+        return
+    c = await store.clashes.find_one_and_update(
+        {"_id": oid, "kind": "rps", "status": "wait", "t": uid, "deadline": {"$gt": utcnow()}},
+        {"$set": {"status": "matching", "pick_t": x}}, return_document=ReturnDocument.AFTER)
+    if not c:
+        await cq.answer("این شرط تموم شده یا مال تو نیست. ⏳")
+        return
+    aid, tid, amt = c["a"], c["t"], int(c["amount"])
+    tdoc = await store.get(tid)
+    err = None
+    if not tdoc or int(tdoc.get("level", 1)) < MIN_LEVEL or tdoc.get("opted_out"):
+        err = "نمی‌تونی وارد این شرط بشی."
+    elif _bet_today(tdoc) + amt > BET_DAILY:
+        err = f"سقفِ شرط‌بندیِ روزانه {BET_DAILY} {GS}ه."
+    elif not await _hold(tid, amt, oid, "ht"):
+        err = "موجودیت کافی نیست. 🪙"
+    if err:
+        await store.clashes.update_one({"_id": oid, "status": "matching"}, {"$set": {"status": "wait"}, "$unset": {"pick_t": ""}})
+        left = (c["deadline"] - utcnow()).total_seconds()
+        if left > 1:
+            spawn(_watch_bet(bot, oid, left + 1))
+        await cq.answer(err, show_alert=True)
+        return
+    await _bump_bet(tid, amt)
+    res = rps_result(c["pick_a"], x)
+    win_amt, fee = rps_payouts(amt, res)
+    if res == 0:
+        pays = [[aid, amt, "ra"], [tid, amt, "rt"]]
+    else:
+        pays = [[aid if res > 0 else tid, win_amt, "w"]]
+    await store.clashes.update_one({"_id": oid, "status": "matching"}, {"$set": {"status": "settling", "payouts": pays, "fee": fee, "res": res}})
+    await cq.answer(f"{RPS[x][0]} {RPS[x][1]}!")
+    await _settle(bot, oid)
+
+
+async def _settle(bot: Optional[Bot], oid):
+    """پرداختِ idempotent: هر پرداخت با مارکرِ تک‌سندی؛ ریکاوری هم می‌تونه امن دوباره صداش بزنه."""
+    c = await store.clashes.find_one({"_id": oid, "kind": "rps", "status": "settling"})
+    if not c:
+        return
+    for uid, amt, tag in c.get("payouts", []):
+        await _pay(int(uid), int(amt), oid, tag, "rps_win" if tag == "w" else "rps_refund")
+    if int(c.get("fee", 0)) > 0 and await store.clashes.find_one_and_update({"_id": oid, "fee_burned": {"$ne": True}}, {"$set": {"fee_burned": True}}):
+        await burn(int(c["fee"]), "rps_fee")
+    done = await store.clashes.find_one_and_update({"_id": oid, "status": "settling"}, {"$set": {"status": "done", "closed_at": utcnow()}},
+                                                   return_document=ReturnDocument.AFTER)
+    if not done or bot is None:
+        return
+    adoc, tdoc = await store.get(c["a"]), await store.get(c["t"])
+    ai, an = RPS[c["pick_a"]][0], _nm(adoc)
+    ti, tn = RPS[c["pick_t"]][0], _nm(tdoc)
+    amt, res = int(c["amount"]), int(c["res"])
+    lines = [f"{ai} {an}  🆚  {ti} {tn}"]
+    if res == 0:
+        lines.append("⚖️ مساوی! پولِ هر دو برگشت.")
+    else:
+        w = adoc if res > 0 else tdoc
+        lines.append(f"🏆 <b>{_nm(w)}</b> برد! 🪙 +{int(c['payouts'][0][1])} {GS} (کارمزدِ سوخته: {int(c['fee'])})")
+    await _show(bot, c, panel("yellow", "🎲", "نتیجه‌ی شرط‌بندی", lines), kb([btn("🏟 میدان", "sk:ar:0", "blue")]))
+
+
+async def _recover_bets(bot: Bot):
+    async for c in store.clashes.find({"kind": "rps", "status": {"$in": list(_PAY_ALL)}}):
+        try:
+            if c["status"] == "settling":
+                await _settle(bot, c["_id"])
+            elif c["status"] == "wait" and (c["deadline"] - utcnow()).total_seconds() > 1:
+                spawn(_watch_bet(bot, c["_id"], (c["deadline"] - utcnow()).total_seconds() + 1))
+            else:
+                await _refund_all(c, "expired")
+        except Exception:
+            log.exception("bet recovery failed")
+
+
+async def recover_arena(bot: Bot):
+    """بعد از ری‌استارت: برخوردهای در انتظار ادامه پیدا می‌کنن، نیمه‌کاره‌ها منقضی و شرط‌ها پس داده/پرداخت میشن."""
+    try:
+        now = utcnow()
+        async for c in store.clashes.find({"kind": {"$in": ["attack", "spar"]}, "status": {"$in": ["wait", "resolving"]}}):
+            if c["status"] == "resolving" or (now - c["created_at"]).total_seconds() > STALE_SECS:
+                await store.clashes.update_one({"_id": c["_id"], "status": c["status"]}, {"$set": {"status": "expired", "closed_at": now}})
+                continue
+            spawn(_watch_clash(bot, c["_id"], max(1.0, (c["deadline"] - now).total_seconds())))
+        await _recover_bets(bot)
+    except Exception:
+        log.exception("recover_arena failed")
+
+
+# ───────────────────────────── 🏟 پنلِ میدان و برترین‌ها ─────────────────────────────
+async def do_arena(m):
+    uid = m.from_user.id
+    doc = await store.get(uid)
+    if not doc or doc.get("registered") is False:
+        return await say(m, "اول ثبت‌نام کن تا وارد میدان بشی. 📜", "🏟", "میدان", "orange")
+    await _expire_bounties()
+    now = time.time()
+    rp, streak = int(doc.get("sk_rp", 0)), int(doc.get("sk_streak", 0))
+    ch, base_t = _regen(doc, now)
+    wk = int(doc.get("sk_rp_w", 0)) if doc.get("sk_rp_wk") == week_key() else 0
+    bounty = 0
+    async for b in store.bounties.find({"target": uid, "status": "open"}):
+        bounty += int(b["amount"])
+    lines = [f"{display(doc, link=True)} — {rank_label(rp)}", rank_progress(rp),
+             f"🔥 زنجیره: <b>{streak}</b> · رکورد {int(doc.get('sk_best', 0))} · 🏅 این هفته {wk} RP",
+             f"🔋 شارژ حمله: {ch}/{MAX_CHARGES}" + (f" · بعدی {_dur(base_t + CHARGE_SECS - now)} دیگه" if ch < MAX_CHARGES else ""),
+             f"⚔️ حمله: {int(doc.get('sk_wins', 0))} برد · {int(doc.get('sk_losses', 0))} باخت   🛡 دفاع: {int(doc.get('sk_def_wins', 0))} برد · {int(doc.get('sk_def_losses', 0))} باخت",
+             f"🪙 غارتِ کل: {int(doc.get('sk_loot', 0))} {GS}"]
+    flags = []
+    if doc.get("sk_war"):
+        flags.append("🔥 حالت جنگ")
+    if float(doc.get("sk_shield", 0)) > now:
+        flags.append(f"🛡 سپر ({_dur(doc['sk_shield'] - now)})")
+    if bounty:
+        flags.append(f"🎯 جایزه روی سرت: {bounty} {GS}")
+    if flags:
+        lines.append(" · ".join(flags))
+    rev = sorted(((float(e), k) for k, e in (doc.get("sk_rev") or {}).items() if float(e) > now))[:3]
+    rows = []
+    if rev:
+        lines += ["┈┈┈┈┈┈┈┈┈┈", "🔥 <b>حقِ انتقام</b>:"]
+        for exp, k in rev:
+            td = await store.get(int(k))
+            if td:
+                lines.append(f"• {display(td)} — {_dur(exp - now)} دیگه")
+                if is_group(m):
+                    rows.append([btn(f"🔥 انتقام از {(td.get('first_name') or '؟')[:14]}", f"sk:rv:{k}:{uid}", "red")])
+    logs = (doc.get("sk_log") or [])[-4:]
+    if logs:
+        lines += ["┈┈┈┈┈┈┈┈┈┈", "📜 <b>نبردنامه</b>:"] + [f"• {_ago(e['t'])}: {e['x']}" for e in reversed(logs)]
+    await show(m, panel("red", "🏟", "میدانِ نبرد", lines,
+                        "⚔️ ریپلای + «حمله» · 🥋 «تمرین» · 😏 «تحقیرش کن» · 🎲 «شرط ۵۰»"),
+               kb(*rows, [btn("🏆 برترین‌ها", f"sk:lb:{uid}", "green"), btn("🔄 تازه‌سازی", f"sk:ar:{uid}", "blue")],
+                  [btn("🌙 منو", f"m:main:{uid}", "blue")]))
+
+
+async def do_arena_board(m):
+    uid = m.from_user.id
+    base = {"opted_out": {"$ne": True}}
+    weekly = await store.users.find({**base, "sk_rp_wk": week_key(), "sk_rp_w": {"$gt": 0}}).sort("sk_rp_w", -1).limit(5).to_list(5)
+    allt = await store.users.find({**base, "sk_rp": {"$gt": 0}}).sort("sk_rp", -1).limit(5).to_list(5)
+    medals = ["🥇", "🥈", "🥉", "4.", "5."]
+    lines = ["📅 <b>این هفته</b>"] + ([f"{medals[i]} {display(d)} — {int(d['sk_rp_w'])} RP" for i, d in enumerate(weekly)] or ["هنوز کسی امتیاز نگرفته. 🕊"])
+    lines += ["┈┈┈┈┈┈┈┈┈┈", "👑 <b>همیشه</b>"] + ([f"{medals[i]} {display(d)} — {rank_label(int(d['sk_rp']))} · {int(d['sk_rp'])} RP" for i, d in enumerate(allt)] or ["—"])
+    await show(m, panel("yellow", "🏆", "برترین‌های میدان", lines, "🏅 RP با حمله‌ی موفق، دفاعِ موفق و خوندنِ حریف بالا میره."),
+               kb([btn("🏟 میدانِ من", f"sk:ar:{uid}", "blue")]))
+
+
+# ───────────────────────────── 🎛 کال‌بک‌ها ─────────────────────────────
+async def arena_cb(cq, bot: Bot, parts: list):
+    """sk:ap:<k>:<st>:<tid>:<ts>:<aid> · sk:df:<c>:<oid>:<tid> · sk:rv:<aid>:<me> · sk:ar:<n> · sk:lb:<n>
+       sk:rp:<x>:<tid>:<amt>:<ts>:<aid> · sk:rr:<x>:<oid>:<tid> · sk:rn:<oid>:<tid>"""
+    uid = cq.from_user.id
+    try:
+        act = parts[1]
+        if act == "ap" and len(parts) >= 7:
+            kind, st, tid, ts = _CODE_KIND.get(parts[2]), parts[3], int(parts[4]), int(parts[5])
+            if not kind or st not in ATT:
+                await cq.answer()
+            elif _tsmin() - ts > PICK_TTL_MIN:
+                await cq.answer("این پنل قدیمی شده؛ دوباره «حمله» رو بزن. ⏳", show_alert=True)
+            else:
+                await _commit(cq, bot, kind, st, uid, tid)
+        elif act == "df" and len(parts) >= 5:
+            await _defend(cq, bot, parts[2], ObjectId(parts[3]), uid)
+        elif act == "rv" and len(parts) >= 4:
+            await _revenge(cq, bot, int(parts[2]), uid)
+        elif act == "ar":
+            await cq.answer()
+            await do_arena(CbMsg(cq, bot))
+        elif act == "lb":
+            await cq.answer()
+            await do_arena_board(CbMsg(cq, bot))
+        elif act == "rp" and len(parts) >= 7:
+            x, tid, amt, ts = parts[2], int(parts[3]), int(parts[4]), int(parts[5])
+            if x not in RPS:
+                await cq.answer()
+            elif _tsmin() - ts > PICK_TTL_MIN:
+                await cq.answer("این پنل قدیمی شده؛ دوباره «شرط» رو بزن. ⏳", show_alert=True)
+            else:
+                await _bet_commit(cq, bot, x, uid, tid, amt)
+        elif act == "rr" and len(parts) >= 5:
+            await _bet_answer(cq, bot, parts[2], ObjectId(parts[3]), uid)
+        elif act == "rn" and len(parts) >= 4:
+            await _bet_decline(cq, bot, ObjectId(parts[2]), uid)
+        else:
+            await cq.answer()
+    except Exception:
+        log.exception("arena callback failed")
+        try:
+            await cq.answer("یه مشکل کوچیک پیش اومد. دوباره امتحان کن. 🛠", show_alert=True)
+        except Exception:
+            pass
+
+
+async def _revenge(cq, bot: Bot, target_id: int, uid: int):
+    if cq.message.chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
+        await cq.answer("انتقام فقط تو گروه ممکنه. 👥", show_alert=True)
+        return
+    adoc, tdoc = await store.get(uid), await store.get(target_id)
+    if not adoc or not tdoc or float((adoc.get("sk_rev") or {}).get(str(target_id), 0)) <= time.time():
+        await cq.answer("حقِ انتقامت تموم شده. ⌛", show_alert=True)
+        return
+    await cq.answer()
+    await attack_open(CbMsg(cq, bot), adoc, tdoc, "attack")
+
+
+# ───────────────────────────── 🪝 هوک‌ها (از skirmish.py) ─────────────────────────────
+async def quest(m, kind: str, uid: Optional[int] = None):
+    await quest_progress(m, kind, uid=uid)
+
+
+async def renown(uid: int, delta: int):
+    info = await _add_rp(uid, delta)
+    return info

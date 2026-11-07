@@ -163,7 +163,7 @@ def label_cb(data: str) -> tuple:
         return {"hit": ("🗡 حمله به باس", False), "call": ("🐉 احضار باس", False)}.get(act, ("🐉 وضعیت باس", False))
     if kind == "mar":
         return ("💞 قبول ازدواج" if act == "yes" else "💔 رد ازدواج"), False
-    simple = {"wn": "🗣 NPCِ زنده", "ch": "🌟 چیت‌اسکیل", "tr": "🛒 قبول معامله", "duelacc": "🥊 قبول دوئل", "buy": "💸 خرید از بازار سیاه", "loot": "🎁 برداشتن صندوق/بمب", "adm": "🛠 ادمین"}
+    simple = {"wn": "🗣 NPCِ زنده", "ch": "🌟 چیت‌اسکیل", "tr": "🛒 قبول معامله", "duelacc": "🥊 قبول دوئل", "sk": "🏟 میدان نبرد", "buy": "💸 خرید از بازار سیاه", "loot": "🎁 برداشتن صندوق/بمب", "adm": "🛠 ادمین"}
     return simple.get(kind, f"🔘 {kind}"), False
 
 

@@ -70,7 +70,7 @@ def looks_like_game(c: str, n: str, m: Message) -> bool:
         return True
     if TRAVEL_RE.fullmatch(c) and detect_biome(c):
         return True
-    if skirmish.matches(m.text or ""):          # ⚔️ حمله/دزدی/ترمیم/هدیه/جایزه/جاسوسی/حالت جنگ
+    if skirmish.matches(m.text or "", bool(m.reply_to_message)):   # ⚔️ حمله/تمرین/تحقیر/شرط/دزدی/ترمیم/هدیه/جایزه/جاسوسی/جنگ/میدان
         return True
     return False
 

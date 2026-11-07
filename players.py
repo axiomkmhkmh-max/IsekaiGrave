@@ -4,6 +4,7 @@ import random
 from datetime import timedelta
 from typing import Optional
 
+from clash import RANKS
 from procgen import effect_total
 
 from pymongo import ReturnDocument
@@ -51,6 +52,12 @@ def earned_titles(doc: dict) -> list:
         t.append("قهرمانِ نیم‌بند")
     if doc.get("mx_sales", 0) >= 5:
         t.append("تاجرِ بازار روح")
+    rm = int(doc.get("sk_rank_max", 0))
+    t += [RANKS[i][2] for i in (3, 5, 7) if rm >= i]               # 🏅 رتبه‌های میدان (شکارچیِ ارواح / سردارِ خونین / رقیبِ ایزدبانو)
+    if doc.get("sk_best", 0) >= 5:
+        t.append("سلاخِ زنجیره‌ای")
+    if doc.get("sk_def_wins", 0) >= 10:
+        t.append("دیوارِ گورستان")
     return t
 
 

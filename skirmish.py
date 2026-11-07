@@ -1,16 +1,17 @@
-"""⚔️ کنش‌های ریپلایی بین بازیکن‌ها: حمله، دزدی، ترمیم، هدیه، جایزه‌ی سر، جاسوسی، حالت جنگ.
+"""⚔️ کنش‌های ریپلایی بین بازیکن‌ها: حمله، دزدی، ترمیم/نجات، هدیه، جایزه‌ی سر، جاسوسی، حالت جنگ + تمرین، تحقیر و شرط‌بندی.
 
-همه‌چیز با «ریپلای» روی پیامِ بازیکنِ دیگه تو گروه (به‌جز حالت جنگ و لیست جایزه‌ها).
-حمله از موتورِ نبردِ تاکتیکیِ موجود (battle_engine.run_ai: کلاس، روح، سپر، رشته‌ی سرنوشت، بازتولد) استفاده می‌کنه.
+همه‌چیز با «ریپلای» روی پیامِ بازیکنِ دیگه تو گروه (به‌جز حالت جنگ، لیست جایزه‌ها و «میدان»).
+حمله، تمرین، تحقیر و شرط‌بندی تو arena.py ـن (حمله‌ی ژستیِ دوطرفه با مثلثِ ژست‌ها، رتبه‌ی نام‌آوری و زنجیره‌ی پیروزی)؛
+اینجا قانون‌های مشترک (شارژ، سپر، غارت، کف‌ها) و کنش‌های تک‌مرحله‌ای (دزدی، ترمیم، هدیه، جایزه، جاسوسی، جنگ) هستن.
 
 قانون‌های ایمنی (همه ثابت و سقف‌دارن):
-- «محافظت» (opted_out) مطلقه: نه حمله، نه دزدی، نه جاسوسی، نه جایزه‌ی سر.
-- حداقل سطح ۳ (مهاجم و هدف)؛ هدف نباید بیشتر از LEVEL_GAP سطح کمتر باشه (ضد زورگویی؛ انتقام معاف).
+- «محافظت» (opted_out) مطلقه: نه حمله، نه دزدی، نه جاسوسی، نه جایزه‌ی سر، نه تحقیر.
+- حداقل سطح ۳ (مهاجم و هدف)؛ هدف نباید بیشتر از LEVEL_GAP سطح کمتر باشه (ضد زورگویی؛ انتقام معاف). تمرین از سطح ۱ آزاده.
 - هر نفر ۳ «شارژ حمله» داره که هر ۲۰ دقیقه ۱ تا برمی‌گرده؛ هر جفت ۱ ساعت یک‌بار؛ بعد از ضربه‌ی موفق ۲۰ دقیقه سپرِ نفس‌گیری.
 - بقا هیچ‌وقت با این سیستم زیر ۵٪ نمیره (مرگ اجباری نیست). غارتِ GS سقف‌دار و همیشه ≥ ۵۰ GS برای قربانی می‌ذاره.
 - انتقال‌ها اتمیک (debit شرطی) و تو دفتر (ledger) ثبت میشن؛ کارمزدها می‌سوزن.
 - قربانیِ ضربه ۲۴ ساعت حق «انتقام» داره (بدون محدودیتِ جفت، با غارتِ بیشتر).
-وضعیتِ زمان‌ها روی سندِ کاربر (فیلدهای sk_*)؛ جایزه‌ها تو کالکشنِ bounties.
+وضعیتِ زمان‌ها روی سندِ کاربر (فیلدهای sk_*)؛ جایزه‌ها تو کالکشنِ bounties و برخوردها/شرط‌ها تو clashes.
 """
 
 import random
@@ -19,8 +20,9 @@ import time
 from datetime import timedelta
 from typing import Optional
 
-from battle_engine import make_fighter, run_ai, pct
-from config import GS
+from battle_engine import make_fighter
+from clash import rank_label
+from config import GS, log
 from database import store
 from economy import burn, credit, debit, terr_perks, ulock
 from npcreply import norm
@@ -46,6 +48,7 @@ STEAL_COOLDOWN = 30 * 60
 STEAL_SHIELD = 15 * 60
 STEAL_PCT, STEAL_CAP, STEAL_FINE = 0.04, 25, 10
 HEAL_COST, HEAL_COOLDOWN, HEAL_DAILY = 8, 10 * 60, 5
+RESCUE_BELOW = 30                   # ٪ بقا: زیر این عدد ترمیم «نجات» حساب میشه
 GIFT_MIN, GIFT_MAX, GIFT_FEE_PCT, GIFT_DAILY = 10, 500, 5, 1000
 BOUNTY_MIN, BOUNTY_MAX, BOUNTY_TARGET_CAP, BOUNTY_TTL_H, BOUNTY_FEE_PCT = 20, 500, 1000, 24, 10
 SPY_COST, SPY_COOLDOWN = 5, 30
@@ -54,23 +57,42 @@ _DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890
 
 ATTACK_RE = re.compile(r"(حمله|حمله کن|بزنش|بکوبش|ضربه بزن|ضربه بزنش)")
 STEAL_RE = re.compile(r"(دزدی|دزدی کن|جیب بری|جیب بری کن|بدزدش)")
-HEAL_RE = re.compile(r"(ترمیم|ترمیمش|ترمیم کن|شفاش بده|درمانش کن)")
+HEAL_RE = re.compile(r"(ترمیم|ترمیمش|ترمیم کن|شفاش بده|درمانش کن|نجاتش بده|نجاتش|نجاتش بده)")
 GIFT_RE = re.compile(r"هدیه (\d{1,5})(?: gs| جی اس)?")
 BOUNTY_RE = re.compile(r"جایزه (?:ی )?(?:سر|روی سر)ش? (\d{1,5})(?: gs| جی اس)?")
 BOUNTY_LIST_RE = re.compile(r"(جایزه ها|لیست جایزه|لیست جایزه ها|شکارچی)")
 SPY_RE = re.compile(r"(جاسوسی|جاسوسش|بررسیش|اسکنش)")
 WAR_ON_RE = re.compile(r"(حالت جنگ|جنگ روشن|حالت جنگ روشن)")
 WAR_OFF_RE = re.compile(r"(حالت صلح|جنگ خاموش|حالت جنگ خاموش)")
-_ALL = (ATTACK_RE, STEAL_RE, HEAL_RE, GIFT_RE, BOUNTY_RE, BOUNTY_LIST_RE, SPY_RE, WAR_ON_RE, WAR_OFF_RE)
+# ── 🏟 میدان (arena.py)
+SPAR_RE = re.compile(r"(تمرین|تمرین کن|تمرین کنیم|تمرین بزنیم|مبارزه تمرینی|اسپار)")
+TAUNT_RE = re.compile(r"(تحقیرش|تحقیرش کن|مسخرش کن|مسخره اش کن|طعنه|طعنه بزن|طعنه بزنش)")
+BET_RE = re.compile(r"(?:شرط|شرط بندی|قمار) (\d{1,4})(?: gs| جی اس)?")
+ARENA_RE = re.compile(r"(میدان نبرد|میدان من|نبردنامه|رتبه نبرد|رتبه من|آمار نبرد)")
+ARENA_BOARD_RE = re.compile(r"(لیدربرد نبرد|رده بندی نبرد|جدول نبرد|برترین ها|برترین های میدان|برترین جنگجوها)")
+_ALL = (ATTACK_RE, STEAL_RE, HEAL_RE, GIFT_RE, BOUNTY_RE, BOUNTY_LIST_RE, SPY_RE, WAR_ON_RE, WAR_OFF_RE,
+        SPAR_RE, TAUNT_RE, BET_RE, ARENA_RE, ARENA_BOARD_RE)
+_NEEDS_REPLY = (SPAR_RE, TAUNT_RE, BET_RE)     # کلمه‌های عامیانه: بدونِ ریپلای عادی‌ان و ربات دخالت نمی‌کنه
 
 
 def _n(raw: str) -> str:
     return norm((raw or "").translate(_DIGITS))
 
 
-def matches(raw: str) -> bool:
+def matches(raw: str, has_reply: bool = True) -> bool:
     t = _n(raw)
-    return any(r.fullmatch(t) for r in _ALL)
+    return any(r.fullmatch(t) for r in _ALL if has_reply or r not in _NEEDS_REPLY)
+
+
+async def _hook(name: str, *a):
+    """هوکِ arena.py (رتبه/ماموریت). خطاش هیچ‌وقت کنشِ اصلی رو خراب نمی‌کنه."""
+    try:
+        import arena
+        await getattr(arena, name)(*a)
+    except ImportError:
+        pass
+    except Exception:
+        log.exception("arena hook %s failed", name)
 
 
 def _dur(sec: float) -> str:
@@ -156,76 +178,6 @@ async def _fighter(doc: dict) -> dict:
     return make_fighter(doc, gear=gear_bonus((doc.get("equip") or {}).get("item")), perks=await terr_perks(doc))
 
 
-# ───────────────────────────── ⚔️ حمله ─────────────────────────────
-async def _attack(m, adoc: dict, tdoc: dict):
-    aid, tid = adoc["user_id"], tdoc["user_id"]
-    now = time.time()
-    async with _Locks(aid, tid):
-        adoc, tdoc = await store.get(aid), await store.get(tid)
-        for who, d in (("تو", adoc), (None, tdoc)):
-            why = _eligible(d)
-            if why:
-                return await say(m, (f"{who}: " if who else "") + why, "⚔️", "حمله", "orange")
-        revenge = float((adoc.get("sk_rev") or {}).get(str(tid), 0)) > now
-        if not revenge and int(tdoc.get("level", 1)) < int(adoc.get("level", 1)) - LEVEL_GAP:
-            return await say(m, "این بازیکن خیلی از تو ضعیف‌تره؛ زورگویی تو ایسکا هم مد نیست. 😒", "⚔️", "حمله", "orange")
-        if float(tdoc.get("sk_shield", 0)) > now:
-            return await say(m, f"{display(tdoc)} تازه ضربه خورده و داره نفس می‌گیره؛ {_dur(tdoc['sk_shield'] - now)} دیگه. 🛡", "🛡", "نفس‌گیری", "blue")
-        last = float((adoc.get("sk_pair") or {}).get(str(tid), 0))
-        if not revenge and now - last < PAIR_COOLDOWN:
-            return await say(m, f"به همین نفر تازه حمله کردی؛ {_dur(PAIR_COOLDOWN - (now - last))} دیگه. ⏳", "⏳", "صبر", "blue")
-        charges, base_t = _regen(adoc, now)
-        if charges <= 0:
-            return await say(m, f"شارژِ حمله نداری؛ بعدی تا {_dur(base_t + CHARGE_SECS - now)} دیگه. 🔋", "🔋", "بی‌شارژ", "blue")
-
-        fa, fb = await _fighter(adoc), await _fighter(tdoc)
-        win = run_ai(fa, fb, first=0) == 0
-        high = bool(tdoc.get("sk_war")) or revenge
-        a_set = {"sk_charges": charges - 1, "sk_charge_t": (now if charges >= MAX_CHARGES else base_t), f"sk_pair.{tid}": now}
-        a_inc = {"sk_wins" if win else "sk_losses": 1}
-        a_unset = {f"sk_rev.{tid}": ""} if revenge else {}
-        lines = [f"{display(adoc, link=True)} ⚔️ {display(tdoc, link=True)}"
-                 + ("  🔥 انتقام!" if revenge else ""),
-                 f"💥 ضربه‌ها: {esc(fa['name'])} {fa['dealt']} · {esc(fb['name'])} {fb['dealt']}"
-                 + (" · 🔁 بازتولد" if fa["used_echo"] or fb["used_echo"] else "")]
-        loot = bounty = 0
-        if win:
-            dmg = 5 + int(10 * pct(fa))
-            if not high:
-                dmg = max(3, dmg // 2)
-            dmg = min(dmg, max(0, int(tdoc.get("survival_rate", 100)) - SURV_FLOOR))
-            if dmg:
-                tdoc = await adjust_survival(tid, -dmg, "sk_hits_taken")
-            amt = _loot_amount(tdoc, high)
-            if amt and await debit(tid, amt, "skirmish_lost", burn_it=False):
-                await credit(aid, amt, "skirmish_loot")
-                loot = amt
-            bounty = await _claim_bounties(tid, aid)
-            await store.users.update_one({"user_id": tid}, {"$set": {"sk_shield": now + SHIELD_SECS, f"sk_rev.{aid}": now + REVENGE_SECS},
-                                                            "$inc": {"sk_lost": loot}})
-            a_inc["sk_loot"] = loot + bounty
-            await grant(aid, xp=random.randint(10, 20))
-            lines += [f"🏆 <b>{esc(fa['name'])} پیروز شد!</b>",
-                      f"💀 {display(tdoc)} −{dmg}٪ بقا {hp_bar(int(tdoc.get('survival_rate', 0)))}"]
-            if loot:
-                lines.append(f"🪙 غارت: +{loot} {GS}" + (" (حالت جنگ/انتقام)" if high else ""))
-            if bounty:
-                lines.append(f"🎯 جایزه‌ی سر: +{bounty} {GS}")
-            lines.append(f"🛡 {display(tdoc)} ۲۰ دقیقه سپر گرفت؛ ولی ۲۴ ساعت حق انتقام داره!")
-        else:
-            dmg = min(random.randint(3, 8), max(0, int(adoc.get("survival_rate", 100)) - SURV_FLOOR))
-            if dmg:
-                await adjust_survival(aid, -dmg, "sk_hits_taken")
-            lines += [f"🛡 <b>{esc(fb['name'])} دفاع کرد!</b> حمله‌ی {esc(fa['name'])} شکست خورد.",
-                      f"🩸 {esc(fa['name'])} −{dmg}٪ بقا بابت حمله‌ی ناموفق."]
-        upd = {"$set": a_set, "$inc": a_inc}
-        if a_unset:
-            upd["$unset"] = a_unset
-        await store.users.update_one({"user_id": aid}, upd)
-        lines.append(f"🔋 شارژ حمله‌ی {esc(fa['name'])}: {charges - 1}/{MAX_CHARGES}")
-        await m.reply(panel("red" if win else "blue", "⚔️", "حمله!" if win else "دفاعِ موفق", lines))
-
-
 # ───────────────────────────── 🥷 دزدی ─────────────────────────────
 async def _steal(m, adoc: dict, tdoc: dict):
     aid, tid = adoc["user_id"], tdoc["user_id"]
@@ -278,13 +230,20 @@ async def _heal(m, adoc: dict, tdoc: dict):
             return await say(m, f"{display(tdoc)} سالمِ سالمه؛ ترمیم لازم نداره. 💪", "🩹", "ترمیم", "green")
         if not await debit(aid, HEAL_COST, "skirmish_heal"):
             return await say(m, f"ترمیم {HEAL_COST} {GS} خرج داره و نداری. 🪙", "🩹", "ترمیم", "orange")
-        h = random.randint(6, 12)
+        rescue = int(tdoc.get("survival_rate", 100)) <= RESCUE_BELOW          # 🆘 نجاتِ لب‌مرز: شفای بیشتر + نام‌آوری
+        h = random.randint(10, 16) if rescue else random.randint(6, 12)
+        if adoc.get("cls") == "priest":
+            h = int(h * 1.3)                                                  # ✨ کشیش: ۳۰٪ شفای بیشتر
         doc = await adjust_survival(tid, h, "blessings_received")
         await store.users.update_one({"user_id": aid}, {"$set": {"sk_heal_t": now, "sk_heal_day": today, "sk_heal_n": n_today + 1}})
-        await grant(aid, xp=5)
-        await m.reply(panel("green", "🩹", "ترمیم", [
-            f"{display(adoc, link=True)} زخمای {display(doc, link=True)} رو بست. 💚",
-            f"💀 +{h}٪ بقا → {doc['survival_rate']}٪ {hp_bar(int(doc['survival_rate']))}", f"🪙 هزینه: {HEAL_COST} {GS}"]))
+        await grant(aid, xp=10 if rescue else 5)
+        await m.reply(panel("green", "🆘" if rescue else "🩹", "نجات!" if rescue else "ترمیم", [
+            f"{display(adoc, link=True)} " + ("جونِ " if rescue else "زخمای ") + f"{display(doc, link=True)} " + ("رو از لبه‌ی مرگ برگردوند! 💚" if rescue else "رو بست. 💚"),
+            f"💀 +{h}٪ بقا → {doc['survival_rate']}٪ {hp_bar(int(doc['survival_rate']))}", f"🪙 هزینه: {HEAL_COST} {GS}"
+            + (" · 🏅 +3 RP" if rescue else "")]))
+        if rescue:
+            await _hook("renown", aid, 3)
+        await _hook("quest", m, "heal", aid)
 
 
 # ───────────────────────────── 🎁 هدیه ─────────────────────────────
@@ -310,6 +269,7 @@ async def _gift(m, adoc: dict, tdoc: dict, amount: int):
         await store.users.update_one({"user_id": aid}, {"$set": {"sk_gift_day": today, "sk_gift_amt": sent + amount}})
         await m.reply(panel("yellow", "🎁", "هدیه", [
             f"{display(adoc, link=True)} به {display(tdoc, link=True)} هدیه داد! 💛", f"🪙 {amount - fee} {GS} رسید (کارمزد {fee} سوخت)"]))
+        await _hook("quest", m, "gift", aid)
 
 
 # ───────────────────────────── 🎯 جایزه‌ی سر ─────────────────────────────
@@ -371,6 +331,7 @@ async def _spy(m, adoc: dict, tdoc: dict):
         f"⭐ سطح {tdoc.get('level', 1)} · 🎭 {esc(str(tdoc.get('cls') or 'بدون کلاس'))}",
         f"💀 بقا {tdoc.get('survival_rate', 100)}٪ {hp_bar(int(tdoc.get('survival_rate', 100)))}",
         f"⚔️ نبردها: {tdoc.get('sk_wins', 0)} برد · {tdoc.get('sk_losses', 0)} باخت",
+        f"🏅 {rank_label(int(tdoc.get('sk_rp', 0)))} · 🔥 زنجیره {int(tdoc.get('sk_streak', 0))}",
         f"💰 وضعِ مالی: {wealth}",
         f"{'🔥 حالت جنگ روشنه' if tdoc.get('sk_war') else '🕊 حالت صلح'}" + (" · 🛡 سپر فعال" if shield else "")]))
 
@@ -396,6 +357,9 @@ async def _war(m, on: bool):
 
 
 # ───────────────────────────── 🚪 ورودی ─────────────────────────────
+_KINDS = ((ATTACK_RE, "attack"), (STEAL_RE, "steal"), (HEAL_RE, "heal"), (SPY_RE, "spy"), (SPAR_RE, "spar"), (TAUNT_RE, "taunt"))
+
+
 async def do_skirmish(m, raw: str) -> bool:
     """True = پیام مالِ این سیستم بود و جواب داده شد."""
     t = _n(raw)
@@ -408,10 +372,15 @@ async def do_skirmish(m, raw: str) -> bool:
     if BOUNTY_LIST_RE.fullmatch(t):
         await _bounty_list(m)
         return True
-    gm, bm = GIFT_RE.fullmatch(t), BOUNTY_RE.fullmatch(t)
-    acts = [(ATTACK_RE, "attack"), (STEAL_RE, "steal"), (HEAL_RE, "heal"), (SPY_RE, "spy")]
-    kind = next((k for r, k in acts if r.fullmatch(t)), "gift" if gm else "bounty" if bm else None)
+    if ARENA_RE.fullmatch(t) or ARENA_BOARD_RE.fullmatch(t):          # 🏟 بدونِ ریپلای؛ تو پیوی هم کار می‌کنه
+        import arena
+        await (arena.do_arena(m) if ARENA_RE.fullmatch(t) else arena.do_arena_board(m))
+        return True
+    gm, bm, tm = GIFT_RE.fullmatch(t), BOUNTY_RE.fullmatch(t), BET_RE.fullmatch(t)
+    kind = next((k for r, k in _KINDS if r.fullmatch(t)), "gift" if gm else "bounty" if bm else "bet" if tm else None)
     if not kind:
+        return False
+    if kind in ("spar", "taunt", "bet") and not m.reply_to_message:     # «تمرین»/«شرط ۵۰» بدونِ ریپلای حرفِ عادیه
         return False
     if not is_group(m):
         await say(m, "این کار فقط تو گروه و با ریپلای روی پیامِ یه بازیکنه. 👥", "⚔️", "ریپلای", "orange")
@@ -429,9 +398,16 @@ async def do_skirmish(m, raw: str) -> bool:
     if kind in ("attack", "steal") and adoc.get("opted_out"):
         await say(m, "خودت «محافظت» رو فعال کردی؛ اول بنویس «برگردم به بازی». 🛡", "🛡", "محافظت", "blue")
         return True
-    if kind == "attack":
-        await _expire_bounties()
-        await _attack(m, adoc, tdoc)
+    if kind in ("attack", "spar", "taunt", "bet"):
+        import arena
+        if kind == "attack":
+            await arena.attack_open(m, adoc, tdoc, "attack")
+        elif kind == "spar":
+            await arena.attack_open(m, adoc, tdoc, "spar")
+        elif kind == "taunt":
+            await arena.do_taunt(m, adoc, tdoc)
+        else:
+            await arena.bet_open(m, adoc, tdoc, int(tm.group(1)))
     elif kind == "steal":
         await _steal(m, adoc, tdoc)
     elif kind == "heal":

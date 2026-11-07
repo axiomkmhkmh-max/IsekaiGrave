@@ -3,6 +3,7 @@
 from aiogram import Bot
 from aiogram.types import CallbackQuery, Message
 
+from arena import arena_cb
 from battle import battle_cb
 from admin import admin_clean, admin_health, ADMIN_HELP, admin_stats, is_admin
 from content import BIOMES, BOONS, CLASSES, NPCS, TERRITORIES
@@ -65,6 +66,14 @@ async def handle_cb(cq: CallbackQuery, bot: Bot):
             await battle_cb(cq, bot, parts)
         else:
             await cq.answer()
+        return
+
+    # 🏟 میدان (حمله‌ی ژستی، تمرین، شرط‌بندی، انتقام): خودش جواب کلیک رو می‌ده
+    if kind == "sk":
+        if registered:
+            await arena_cb(cq, bot, parts)
+        else:
+            await cq.answer("اول ثبت‌نام کن. 🙂", show_alert=True)
         return
 
     # ── ادمین
@@ -213,6 +222,9 @@ async def handle_cb(cq: CallbackQuery, bot: Bot):
             await gs_panel(m)
         elif act == "wheel":
             await do_wheel(m)
+        elif act == "arena":
+            from arena import do_arena
+            await do_arena(m)
         elif act == "guild":
             await do_guild_me(m)
         elif act == "war":
