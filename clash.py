@@ -17,14 +17,24 @@ ATT = {
     "h": ("💥", "ضربه‌ی سنگین"),
     "q": ("🗡", "ضربه‌ی سریع"),
     "f": ("🌀", "فریب"),
+    "x": ("✨", "ضربه‌ی ویژه"),      # ⚡ با ۳ تمرکز
 }
 DEF = {
     "g": ("🛡", "سپر"),
     "e": ("💨", "جاخالی"),
     "c": ("🔄", "ضدحمله"),
+    "v": ("⛓", "دفاعِ ویژه"),        # ⚡ با ۳ تمرکز
 }
+ATT_BASE, DEF_BASE = ("h", "q", "f"), ("g", "e", "c")
 # ژستِ مهاجم → (دفاعی که می‌بره، دفاعی که ازش می‌بازه)
 _TRI = {"h": ("g", "e"), "q": ("e", "c"), "f": ("c", "g")}
+
+# ⚡ تمرکز: بازنده‌ی هر برخورد (و کسی که خونده میشه) تمرکز جمع می‌کنه؛ ۳ تمرکز = یه ژستِ ویژه.
+#   ✨ ضربه‌ی ویژه: سپر و جاخالی رو می‌شکنه، از 🔄 ضدحمله می‌بازه، با ⛓ مساویه.
+#   ⛓ دفاعِ ویژه: ضربه‌ی سنگین/سریع/فریب رو می‌خونه، با ✨ مساویه.
+FOCUS_MAX, FOCUS_COST = 3, 3
+SPECIAL_EDGE_SOULS = 3
+SPECIAL_HELP = "✨ ویژه (۳⚡): سپر و جاخالی رو می‌شکنه، از ضدحمله می‌بازه · ⛓ دفاعِ ویژه (۳⚡): هر سه ضربه‌ی عادی رو می‌خونه"
 
 TRIANGLE_HELP = (
     "💥 سنگین: سپر رو می‌شکنه · از جاخالی می‌بازه\n"
@@ -38,6 +48,10 @@ EDGE_ATK_PENALTY = 0.85  # مهاجمِ خوانده‌شده: ضربه‌هاش
 
 def clash_result(att: str, dfn: str) -> int:
     """+۱ = مهاجم خوندش (برتری)، ۰ = مساوی، −۱ = مدافع خوند."""
+    if att == "x":
+        return 1 if dfn in ("g", "e") else -1 if dfn == "c" else 0
+    if dfn == "v":
+        return -1 if att in ATT_BASE else 0
     win_vs, lose_vs = _TRI[att]
     return 1 if dfn == win_vs else -1 if dfn == lose_vs else 0
 
@@ -47,13 +61,13 @@ def auto_defense(cls: Optional[str]) -> str:
     return {"warrior": "g", "rogue": "e", "mage": "c", "priest": "g"}.get(cls or "", "g")
 
 
-def apply_edge(fa: dict, fb: dict, res: int, max_soul: int = 5) -> int:
+def apply_edge(fa: dict, fb: dict, res: int, max_soul: int = 5, souls: int = EDGE_SOULS) -> int:
     """نتیجه‌ی کلش رو روی دو جنگنده (در جا) اعمال می‌کنه؛ خروجی = اندیسِ اولین بازیکن (0=مهاجم)."""
     if res > 0:
-        fa["soul"] = min(max_soul, fa["soul"] + EDGE_SOULS)
+        fa["soul"] = min(max_soul, fa["soul"] + souls)
         return 0
     if res < 0:
-        fb["soul"] = min(max_soul, fb["soul"] + EDGE_SOULS)
+        fb["soul"] = min(max_soul, fb["soul"] + souls)
         fa["atk"] = int(fa["atk"] * EDGE_ATK_PENALTY)
         return 1
     return 0
@@ -80,7 +94,106 @@ CLASH_LINES = {
     ("f", "c"): "🌀 {d} گولِ فریبِ {a} رو خورد و ضدحمله‌اش تو هوا موند!",
     ("f", "g"): "🛡 {d} فریبِ {a} رو نخرید و سپرش رو نگه داشت!",
     ("f", "e"): "⚖️ فریبِ {a} و جاخالیِ {d}؛ هر دو دور هم می‌چرخن!",
+    ("x", "g"): "✨ ضربه‌ی ویژه‌ی {a} سپرِ {d} رو مثلِ شیشه خرد کرد!",
+    ("x", "e"): "✨ {d} هر کجا پرید، ضربه‌ی ویژه‌ی {a} اونجا بود!",
+    ("x", "c"): "🔄 {d} ضربه‌ی ویژه‌ی {a} رو تو آخرین لحظه برگردوند!",
+    ("x", "v"): "⚡ ضربه‌ی ویژه‌ی {a} و دفاعِ ویژه‌ی {d}؛ زمین لرزید!",
+    ("h", "v"): "⛓ {d} ضربه‌ی سنگینِ {a} رو خوند و زنجیرش کرد!",
+    ("q", "v"): "⛓ {d} تیغِ سریعِ {a} رو تو هوا گرفت!",
+    ("f", "v"): "⛓ فریبِ {a} پیشِ {d} هیچ اثری نداشت!",
 }
+
+# 📜 فرمانِ روز: هر روز یه ژست ۳ RPِ اضافه می‌ده (فقط RP؛ هیچ پولی چاپ نمیشه).
+# (آیکون، نام، شرح، سمت، کد)
+EDICTS = [
+    ("🛡", "روزِ سپر", "دفاعِ موفق با 🛡", "def", "g"),
+    ("💨", "روزِ سایه", "دفاعِ موفق با 💨", "def", "e"),
+    ("🔄", "روزِ تلافی", "دفاعِ موفق با 🔄", "def", "c"),
+    ("💥", "روزِ کوبنده", "حمله‌ی موفق با 💥", "att", "h"),
+    ("🗡", "روزِ تیغ", "حمله‌ی موفق با 🗡", "att", "q"),
+    ("🌀", "روزِ مکر", "حمله‌ی موفق با 🌀", "att", "f"),
+]
+EDICT_RP = 3
+
+
+def edict_for(day: str) -> tuple:
+    return EDICTS[sum(ord(c) for c in day) % len(EDICTS)]
+
+
+def edict_text(day: str) -> str:
+    ic, nm, desc, _side, _code = edict_for(day)
+    return f"{ic} فرمانِ امروز — {nm}: {desc} = +{EDICT_RP} RP"
+
+
+def edict_bonus(day: str, attacker_won: bool, att: str, dfn: str) -> int:
+    _ic, _nm, _d, side, code = edict_for(day)
+    if attacker_won:
+        return EDICT_RP if side == "att" and att == code else 0
+    return EDICT_RP if side == "def" and dfn == code else 0
+
+
+# 🎭 تخصصِ کلاس: فقط تساوی‌ها رو به نفعِ صاحبِ تخصص می‌چرخونه (مثلثِ اصلی دست‌نخورده می‌مونه).
+# تساوی‌های ممکن: (💥،🔄) · (🗡،🛡) · (🌀،💨). اگه هر دو طرف تخصصِ همون تساوی رو داشته باشن، خنثی میشه.
+SIGN_ATT = {"warrior": ("h", "c"), "rogue": ("q", "g"), "mage": ("f", "e")}
+SIGN_DEF = {"warrior": ("q", "g"), "rogue": ("f", "e"), "mage": ("h", "c")}
+PRIEST_DEF_HEAL = 4          # ✨ کشیشِ مدافعِ پیروز ٪بقا برمی‌گردونه
+
+
+def class_edge(res: int, acls: Optional[str], dcls: Optional[str], att: str, dfn: str) -> tuple:
+    """(نتیجه‌ی جدید، توضیح یا None)."""
+    if res != 0:
+        return res, None
+    a = SIGN_ATT.get(acls or "") == (att, dfn)
+    d = SIGN_DEF.get(dcls or "") == (att, dfn)
+    if a and not d:
+        return 1, "🎭 تخصصِ کلاسِ مهاجم تساوی رو به نفعش چرخوند!"
+    if d and not a:
+        return -1, "🎭 تخصصِ کلاسِ مدافع تساوی رو به نفعش چرخوند!"
+    return 0, None
+
+
+# 🔁 حرکتِ تکراری: ژستِ سومین بارِ پشت‌سرهم لو میره؛ تو تساوی طرفِ تکراری می‌بازه.
+def run_next(prev: Optional[str], code: str) -> tuple:
+    """prev مثلِ «h2» (ژست + تعدادِ پشت‌سرهم). خروجی = (مقدارِ جدید، آیا این بار «تکراری» بود؟)."""
+    n = 1
+    if prev and prev[:1] == code:
+        try:
+            n = int(prev[1:] or 1) + 1
+        except ValueError:
+            n = 2
+    return f"{code}{min(n, 9)}", n >= 3
+
+
+def repeat_edge(res: int, a_rep: bool, d_rep: bool) -> tuple:
+    if res != 0 or a_rep == d_rep:
+        return res, None
+    if a_rep:
+        return -1, "🔁 ژستِ تکراریِ مهاجم لو رفت و تساوی به مدافع رسید!"
+    return 1, "🔁 دفاعِ تکراریِ مدافع لو رفت و تساوی به مهاجم رسید!"
+
+
+# 🎲 شرط‌بندیِ تماشاچی‌ها (مبلغِ ثابت؛ پات بینِ برنده‌ها تقسیم میشه؛ کارمزد و باقیمانده می‌سوزه)
+SBET_STAKE, SBET_DAILY, SBET_MAX, SBET_FEE_PCT = 10, 60, 12, 5
+
+
+def sbet_payouts(bets: list, winner: Optional[str], fee_pct: int = SBET_FEE_PCT) -> tuple:
+    """bets = [{"u","side","amt"}] → ([(uid, مبلغ)]، مبلغِ سوخته، «pay» یا «refund»).
+    اگه برنده نامشخص باشه یا یه طرف خالی باشه: همه پولشون رو پس می‌گیرن. جمعِ پرداخت‌ها + سوخته = جمعِ شرط‌ها."""
+    total = sum(int(b["amt"]) for b in bets)
+    wins = [b for b in bets if b["side"] == winner]
+    win_sum = sum(int(b["amt"]) for b in wins)
+    lose_sum = total - win_sum
+    if winner not in ("a", "d") or not wins or lose_sum <= 0:
+        return [(b["u"], int(b["amt"])) for b in bets], 0, "refund"
+    fee = max(1, lose_sum * fee_pct // 100)
+    pool = lose_sum - fee
+    pays = [(b["u"], int(b["amt"]) + pool * int(b["amt"]) // win_sum) for b in wins]
+    return pays, total - sum(p for _u, p in pays), "pay"
+
+
+# 🔔 حمایتِ تماشاچی‌ها
+SUPPORT_MARGIN = 2   # اختلافِ ≥۲ حامی = +۱ روح برای اون سمت
+
 
 TAUNTS = [
     "{a} با یه پوزخندِ تمام‌عیار به {d} نگاه کرد: «اون شمشیر رو از کجا قرض گرفتی؟» 😏",

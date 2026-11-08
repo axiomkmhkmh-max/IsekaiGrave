@@ -74,6 +74,12 @@ async def _weekly_rollover(old_meta: Optional[dict], wk: str) -> dict:
     async for t in store.territories.find({"owner": {"$ne": None}}, {"owner": 1}):
         await store.guilds.update_one({"name": t["owner"]}, {"$inc": {"treasury": TERR_TRIBUTE}})
     await store.guilds.update_many({}, {"$set": {"week_pts": 0}})
+    if old_meta and old_meta.get("key"):       # 🏟 جایزه‌ی هفتگیِ میدان (۳ نفرِ اولِ RP)
+        try:
+            from arena import season_payout
+            await season_payout(old_meta["key"], _bot)
+        except Exception:
+            log.exception("arena season payout failed")
     # 🕯 عُشرِ ایزدبانو: فقط روی بخشِ بالای آستانه (جلوگیری از انباشتِ بی‌پایان؛ ۰ = خاموش)
     if WEEKLY_TITHE_PCT > 0 and WEEKLY_TITHE_ABOVE > 0:
         try:

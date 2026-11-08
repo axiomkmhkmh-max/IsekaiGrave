@@ -69,9 +69,10 @@ SPAR_RE = re.compile(r"(تمرین|تمرین کن|تمرین کنیم|تمری�
 TAUNT_RE = re.compile(r"(تحقیرش|تحقیرش کن|مسخرش کن|مسخره اش کن|طعنه|طعنه بزن|طعنه بزنش)")
 BET_RE = re.compile(r"(?:شرط|شرط بندی|قمار) (\d{1,4})(?: gs| جی اس)?")
 ARENA_RE = re.compile(r"(میدان نبرد|میدان من|نبردنامه|رتبه نبرد|رتبه من|آمار نبرد)")
+TRAP_RE = re.compile(r"(تله بذار|تله بزار|تله بگذار|تله بکار|تله کار بذار)")
 ARENA_BOARD_RE = re.compile(r"(لیدربرد نبرد|رده بندی نبرد|جدول نبرد|برترین ها|برترین های میدان|برترین جنگجوها)")
 _ALL = (ATTACK_RE, STEAL_RE, HEAL_RE, GIFT_RE, BOUNTY_RE, BOUNTY_LIST_RE, SPY_RE, WAR_ON_RE, WAR_OFF_RE,
-        SPAR_RE, TAUNT_RE, BET_RE, ARENA_RE, ARENA_BOARD_RE)
+        SPAR_RE, TAUNT_RE, BET_RE, ARENA_RE, ARENA_BOARD_RE, TRAP_RE)
 _NEEDS_REPLY = (SPAR_RE, TAUNT_RE, BET_RE)     # کلمه‌های عامیانه: بدونِ ریپلای عادی‌ان و ربات دخالت نمی‌کنه
 
 
@@ -375,6 +376,10 @@ async def do_skirmish(m, raw: str) -> bool:
     if ARENA_RE.fullmatch(t) or ARENA_BOARD_RE.fullmatch(t):          # 🏟 بدونِ ریپلای؛ تو پیوی هم کار می‌کنه
         import arena
         await (arena.do_arena(m) if ARENA_RE.fullmatch(t) else arena.do_arena_board(m))
+        return True
+    if TRAP_RE.fullmatch(t):                                          # 🪤 بدونِ ریپلای
+        import arena
+        await arena.do_trap(m)
         return True
     gm, bm, tm = GIFT_RE.fullmatch(t), BOUNTY_RE.fullmatch(t), BET_RE.fullmatch(t)
     kind = next((k for r, k in _KINDS if r.fullmatch(t)), "gift" if gm else "bounty" if bm else "bet" if tm else None)
