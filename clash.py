@@ -317,3 +317,216 @@ def rps_payouts(amount: int, res: int) -> tuple:
     pot = 2 * amount
     fee = max(1, pot * RPS_FEE_PCT // 100)
     return pot - fee, fee
+
+
+# ═════════════════════════════ v3.6 — ذهن‌بازی ═════════════════════════════
+# همه‌ی این بخش‌ها خالص‌ان (بدونِ تلگرام/دیتابیس)؛ جاهایی که شانس هست، rnd از بیرون میاد.
+
+# ───────────── 🎭 تنوعِ صحنه: هر برخورد سه روایتِ مختلف داره (چت هیچ‌وقت تکراری نمیشه) ─────────────
+CLASH_ALT = {
+    ("h", "g"): ["🔨 ضربه‌ی سنگینِ {a} مثلِ پتک روی سپرِ {d} فرود اومد؛ جرقه تا آسمون رفت!",
+                 "💥 {d} سپر رو بالا آورد ولی وزنِ ضربه‌ی {a} از سپر سنگین‌تر بود!"],
+    ("h", "e"): ["🌪 {a} با تمامِ زورش زد و {d} مثلِ باد کنار رفت؛ زمین ترک خورد!",
+                 "💨 {d} یه قدم عقب رفت و ضربه‌ی کُندِ {a} فقط هوا رو شکافت!"],
+    ("h", "c"): ["⚖️ {a} و {d} همزمان زدن؛ موجِ برخورد همه رو عقب انداخت!",
+                 "💫 ضربه‌ی {a} با ضدحمله‌ی {d} قفل شد؛ هیچ‌کس جا نزد!"],
+    ("q", "e"): ["⚡ {d} هنوز داشت جاخالی می‌داد که تیغِ {a} رد شد!",
+                 "🗡 جاخالیِ {d} یه ثانیه دیر بود؛ ضربه‌ی سریعِ {a} خط انداخت!"],
+    ("q", "c"): ["🪞 {d} تیغِ {a} رو تو هوا خوند و دقیق همون‌جا برگردوند!",
+                 "🔄 ضدحمله‌ی {d} ضربه‌ی سریعِ {a} رو مثلِ آینه پس فرستاد!"],
+    ("q", "g"): ["🛡 تیغِ سریعِ {a} روی سپرِ {d} سر خورد و تو هوا موند!",
+                 "⚖️ {a} زد ولی سپرِ {d} تکون نخورد؛ یه صدای تیز و تمام!"],
+    ("f", "c"): ["🎭 فریبِ {a} کار کرد؛ {d} به یه سایه ضدحمله زد!",
+                 "🌀 {a} چشمک زد و {d} ضدحمله‌اش رو جای اشتباه خرج کرد!"],
+    ("f", "g"): ["🧱 {a} دورِ سپرِ {d} چرخید ولی هیچ شکافی پیدا نکرد!",
+                 "🛡 {d} چشم از {a} برنداشت؛ فریب خورد ولی سپرش پایین نیومد!"],
+    ("f", "e"): ["💃 {a} فریب داد و {d} هم جاخالی داد؛ دو تا رقصنده دورِ هم!",
+                 "🌀 هر دو منتظرِ اشتباهِ هم موندن؛ هیچ‌کس جا نزد!"],
+    ("x", "g"): ["✨ سپرِ {d} زیرِ ضربه‌ی ویژه‌ی {a} مثلِ یخ ترکید!",
+                 "🌟 ضربه‌ی ویژه‌ی {a} از سپرِ {d} رد شد انگار اصلاً نبود!"],
+    ("x", "e"): ["✨ {d} پرید ولی ضربه‌ی ویژه‌ی {a} از قبل اونجا منتظرش بود!",
+                 "🌟 {a} مسیرِ جاخالیِ {d} رو از قبل دیده بود!"],
+    ("x", "c"): ["🔄 {d} ضربه‌ی ویژه‌ی {a} رو با آخرین نَفَس برگردوند!",
+                 "🪞 ضربه‌ی ویژه‌ی {a} تو ضدحمله‌ی {d} شکست و برگشت!"],
+    ("x", "v"): ["⚡ ویژه در برابرِ ویژه؛ {a} و {d} هر دو لرزیدن!",
+                 "⛓ دفاعِ ویژه‌ی {d} جلوی ضربه‌ی ویژه‌ی {a} ایستاد؛ آسمون غرید!"],
+    ("h", "v"): ["⛓ {d} ضربه‌ی سنگینِ {a} رو مثلِ بازی‌ِ بچه‌ها گرفت!",
+                 "⛓ زنجیرِ {d} دورِ ضربه‌ی سنگینِ {a} پیچید و خردش کرد!"],
+    ("q", "v"): ["⛓ تیغِ سریعِ {a} وسطِ هوا قفل شد؛ {d} فقط لبخند زد!",
+                 "⛓ {d} حتی پلک نزد؛ ضربه‌ی سریعِ {a} خوانده شده بود!"],
+    ("f", "v"): ["⛓ فریبِ {a} پیشِ {d} مثلِ تئاترِ بی‌تماشاچی بود!",
+                 "⛓ {d} فریب رو از اولش خوند؛ {a} دست‌پاچه شد!"],
+}
+
+WIN_FLOURISH = [
+    "{a} شمشیرش رو تو غلاف کرد و بی‌خیال رفت. 😎", "{a} به گروه نگاه کرد: «بعدی کیه؟» 🔥",
+    "{a} روی شانه‌اش گرد و غبار رو تکوند. 💨", "ایزدبانو از گوشه‌ی گورستان یه ابرو بالا انداخت. 💅",
+]
+DEF_FLOURISH = [
+    "{d} آروم سرش رو چرخوند: «همین بود؟» 😏", "{d} شمشیرش رو چرخوند و حریف رو به یادگاری سپرد. 🛡",
+    "تماشاچی‌ها هورا کشیدن؛ {d} تعظیم کوتاهی کرد. 👏", "گورستان یه لحظه ساکت شد؛ بعد صدای دست‌زدنِ ارواح بلند شد. 👻",
+]
+
+
+def scene_line(att: str, dfn: str, rnd) -> str:
+    opts = [CLASH_LINES[(att, dfn)]] + list(CLASH_ALT.get((att, dfn), []))
+    return rnd.choice(opts)
+
+
+# ───────────── 🎼 کامبو: سه ژستِ «متفاوتِ» پشت‌سرهم تو ۲ ساعت = +۱ روح ─────────────
+# ضدِ «حرکتِ تکراری»: اونجا تکرار تنبیه میشه، اینجا تنوع جایزه داره. دو ژستِ آخرِ مهاجم/مدافع علنیه (تو نتیجه‌ی برخوردهای قبلی)،
+# پس حریف می‌دونه ژستِ سومِ کامل‌کننده کدومه؛ مهاجم باید تصمیم بگیره کامبو رو بزنه یا بلوف کنه.
+COMBO_WINDOW = 2 * 3600
+COMBO_SOULS = 1
+COMBO_RP = 2
+COMBO_ATT_NAME = "🎼 کامبوی سه‌رنگ"
+COMBO_DEF_NAME = "🏰 دیوارِ سه‌لایه"
+
+
+def combo_fresh(prev: Optional[list], t_prev: Optional[float], base: tuple, now: float) -> list:
+    """دو ژستِ آخرِ هنوز معتبر (خالی اگه از پنجره گذشته)."""
+    if not prev or now - float(t_prev or 0) > COMBO_WINDOW:
+        return []
+    return [c for c in prev if c in base][-2:]
+
+
+def combo_step(prev: Optional[list], t_prev: Optional[float], code: str, base: tuple, now: float) -> tuple:
+    """(لیستِ جدید، کامبو کامل شد؟). ژستِ غیرپایه (ویژه) کامبو رو دست نمی‌زنه."""
+    cur = combo_fresh(prev, t_prev, base, now)
+    if code not in base:
+        return cur, False
+    seq = (cur + [code])[-3:]
+    if len(seq) == 3 and len(set(seq)) == 3:
+        return [], True
+    return seq[-2:], False
+
+
+def combo_need(prev: Optional[list], t_prev: Optional[float], base: tuple, now: float) -> Optional[str]:
+    """ژستِ سومی که کامبو رو کامل می‌کنه (فقط وقتی دو ژستِ متفاوت داریم)."""
+    cur = combo_fresh(prev, t_prev, base, now)
+    if len(cur) == 2 and cur[0] != cur[1]:
+        return next(c for c in base if c not in cur)
+    return None
+
+
+def combo_text(prev: Optional[list], t_prev: Optional[float], table: dict, base: tuple, now: float, name: str = "🎼 کامبو") -> str:
+    cur = combo_fresh(prev, t_prev, base, now)
+    if not cur:
+        return f"{name}: ۳ ژستِ متفاوتِ پشت‌سرهم = +۱🕯 (هنوز شروع نشده)"
+    need = combo_need(prev, t_prev, base, now)
+    chain = " → ".join(table[c][0] for c in cur) + (" → ؟" if len(cur) < 3 else "")
+    if need:
+        return f"{name}: {chain} — با {table[need][0]} کامل میشه (+۱🕯)!"
+    return f"{name}: {chain} — یه ژستِ متفاوت بزن"
+
+
+# ───────────── 🩸 حمله‌ی ریسکی: همه‌یا‌هیچ (استیکِ مهاجم علنیه، ژستش مخفی) ─────────────
+RISK_MIN_SURV = 40          # زیرِ این بقا حمله‌ی ریسکی ممکن نیست
+RISK_LOOT_MULT = 1.5
+RISK_DMG_MULT = 1.3
+RISK_WIN_RP = 3
+RISK_LOSE_SURV = 4          # ٪ بقای اضافی که با باخت از دست میره
+RISK_LOSE_RP = 3
+RISK_DEF_RP = 2             # پاداشِ اضافه‌ی مدافعی که ریسک رو می‌شکنه
+RISK_DEF_LOOT_MULT = 1.5
+RISK_HELP = (f"🩸 ریسکی: برد = غارت ×{RISK_LOOT_MULT:g}، ضربه ×{RISK_DMG_MULT:g}، +{RISK_WIN_RP} RP · "
+             f"باخت = −{RISK_LOSE_SURV}٪ بقای اضافه و −{RISK_LOSE_RP} RP (مدافع هم +{RISK_DEF_RP} RP می‌گیره)")
+
+
+# ───────────── 💢 جان‌سخت: بعد از ۳ باختِ پشت‌سرهم، برنامه‌ی بعدی با +۱ روح ─────────────
+COMEBACK_LOSSES = 3
+COMEBACK_SOULS = 1
+
+
+# ───────────── 🆚 رقابت: هر جفت که زیاد با هم بجنگن «رقیب» میشن ─────────────
+# (حدِ پایینِ تعدادِ برخورد، ایموجی، نام، سطح)
+RIVAL_LEVELS = [(3, "🆚", "رقیب", 1), (6, "🩸", "دشمنِ خونی", 2), (10, "💀", "رقیبِ دیرینه", 3)]
+RIVAL_RP = {0: 0, 1: 1, 2: 2, 3: 3}          # RPِ اضافه‌ی برنده‌ی برخوردِ رقابتی
+RIVAL_MILESTONES = (3, 6, 10, 15, 25)
+
+
+def rival_level(n: int) -> tuple:
+    """(سطح، برچسب یا '')."""
+    lvl, label = 0, ""
+    for need, ic, nm, lv in RIVAL_LEVELS:
+        if n >= need:
+            lvl, label = lv, f"{ic} {nm}"
+    return lvl, label
+
+
+def rival_line(name: str, w: int, l: int) -> Optional[str]:
+    n = w + l
+    if n <= 0:
+        return None
+    lvl, label = rival_level(n)
+    tag = f" — {label} (برنده +{RIVAL_RP[lvl]} RP)" if lvl else ""
+    lead = "🟢 جلویی" if w > l else "🔴 عقبی" if l > w else "⚪ مساوی"
+    return f"🆚 سابقه با {name}: {w} برد · {l} باخت ({lead}){tag}"
+
+
+def rival_banner(name_a: str, name_d: str, n: int) -> Optional[str]:
+    if n not in RIVAL_MILESTONES:
+        return None
+    lvl, label = rival_level(n)
+    if lvl:
+        return f"{label}! {name_a} و {name_d} برای {n}مین بار روبه‌روی هم ایستادن؛ ایسکا این رقابت رو یادش می‌مونه. 📖"
+    return None
+
+
+# ───────────── 🧠 تسلط و عنوان‌ها (هدفِ بلندمدت) ─────────────
+# (فیلد روی سندِ بازیکن، حد، لقب)
+ACH_TITLES = [
+    ("sk_reads", 20, "🧠 ذهن‌خوانِ میدان"),
+    ("sk_guess_ok", 15, "🔮 غیب‌گوی تماشاچی"),
+    ("sk_combos", 5, "🎼 استادِ کامبو"),
+    ("sk_risk_w", 5, "🩸 قمارباز"),
+    ("sk_riv10", 1, "💀 رقیبِ دیرینه"),
+    ("sk_ds_best", 7, "🔥 وفادارِ میدان"),
+]
+
+
+def ach_due(doc: dict) -> list:
+    have = set(doc.get("titles") or [])
+    return [t for f, need, t in ACH_TITLES if int(doc.get(f, 0) or 0) >= need and t not in have]
+
+
+# ───────────── 🔮 حدسِ تماشاچی‌ها ─────────────
+GUESS_MAX = 15       # حداکثر حدس‌زن در هر برخورد
+GUESS_DAILY = 8      # حداکثر پاداشِ حدسِ روزانه
+GUESS_RP = 1
+
+
+# ───────────── 🔥 روزهای پشت‌سرهم + 🎯 چالش‌های روز + 🎁 صندوق ─────────────
+# (XP، GS، تمرکز) برای رسیدن به هر روز
+DAY_STREAK_REWARDS = {2: (10, 0, 0), 3: (20, 10, 1), 5: (30, 20, 0), 7: (60, 40, 1), 10: (80, 60, 1),
+                      14: (120, 100, 2), 21: (150, 150, 2), 30: (250, 300, 3)}
+
+# (کلید، ایموجی، شرح، هدف)
+TRIALS = (("a", "⚔️", "حمله‌ی موفق", 2), ("d", "🛡", "دفاعِ موفق", 2), ("r", "🧠", "خوندنِ حرکتِ حریف", 1))
+
+
+def trial_text(dq: Optional[dict], day: str) -> str:
+    cur = dq if (dq and dq.get("day") == day) else {}
+    parts = [f"{ic} {min(int(cur.get(k, 0)), need)}/{need}" for k, ic, _nm, need in TRIALS]
+    done = all(int(cur.get(k, 0)) >= need for k, _ic, _nm, need in TRIALS)
+    return "🎯 چالش‌های امروز: " + " · ".join(parts) + ("  ✅ صندوق باز شد!" if done else "  (کامل کن، صندوق بگیر 🎁)")
+
+
+def trials_done(dq: Optional[dict], day: str) -> bool:
+    return bool(dq) and dq.get("day") == day and all(int(dq.get(k, 0)) >= need for k, _ic, _nm, need in TRIALS)
+
+
+# (وزن، نام، بازه‌ی GS، تمرکز) — جایزه‌ی متغیر: همیشه ارزشمنده، گاهی هم جکپات
+CHEST_TIERS = [(60, "📦 صندوقِ چوبی", (10, 25), 0), (30, "🎁 صندوقِ نقره‌ای", (30, 60), 1), (10, "💎 صندوقِ افسانه‌ای", (90, 150), 2)]
+
+
+def chest_roll(rnd) -> tuple:
+    """(نام، GS، تمرکز)."""
+    r = rnd.random() * sum(w for w, *_ in CHEST_TIERS)
+    acc = 0
+    for w, name, (lo, hi), foc in CHEST_TIERS:
+        acc += w
+        if r < acc:
+            return name, rnd.randint(lo, hi), foc
+    w, name, (lo, hi), foc = CHEST_TIERS[0]
+    return name, rnd.randint(lo, hi), foc

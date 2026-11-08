@@ -7,6 +7,8 @@
 • 😏 تحقیر: طعنه‌ی بامزه؛ به طرف ۱ ساعت حقِ انتقام (بدونِ محدودیتِ جفت) می‌ده.
 • ✊✋✌️ شرط‌بندی: سنگ‌کاغذ‌قیچی با GS؛ پات تو «امانت» می‌مونه و پرداخت‌ها idempotent ـن.
 • 🏅 رتبه‌ی نام‌آوری (RP)، 🔥 زنجیره‌ی پیروزی، 📜 نبردنامه و 🔥 انتقامِ یک‌کلیکی تو پنلِ «میدان».
+• v3.6 «ذهن‌بازی»: 🩸 حمله‌ی ریسکی، 🎼/🏰 کامبو (سه ژستِ متفاوت)، 🔮 حدسِ تماشاچی‌ها، ⏰ منشنِ ثانیه‌های آخر،
+  🆚 رقابت (رقیب/دشمنِ خونی)، 💢 جان‌سخت، 🧠 لقب‌های تسلط، 🔥 روزهای پشت‌سرهم، 🎯 چالش‌های روز + 🎁 صندوق، 🥋 ریمچِ یک‌کلیکی.
 
 امنیت (همه ثابت و سقف‌دار):
 • هر برخورد با یک «claim» اتمیک روی وضعیت (wait → resolving → done) حل میشه؛ پس جایزه/تاوان دقیقاً یک‌بار.
@@ -29,13 +31,19 @@ from pymongo import ReturnDocument
 from battle import _Shim
 from battle_engine import MAX_SOUL, pct, run_ai
 from clash import (
-    ATT, ATT_BASE, CLASH_LINES, DEF, DEF_BASE, FOCUS_COST, FOCUS_MAX, RANK_REWARD,
+    ATT, ATT_BASE, DEF, DEF_BASE, FOCUS_COST, FOCUS_MAX, RANK_REWARD,
     RANK_UP_LINES, RPS, SPECIAL_EDGE_SOULS, SPECIAL_HELP, SUPPORT_MARGIN, TAUNTS, TRIANGLE_HELP, apply_edge, attack_rp,
     PRIEST_DEF_HEAL, SBET_DAILY, SBET_MAX, SBET_STAKE, auto_defense, class_edge, clash_result, defend_rp, edict_bonus,
     edict_text, habit_line, rank_index, rank_label, rank_name, rank_progress, repeat_edge, rps_payouts, rps_result,
     run_next, sbet_payouts, streak_banner, streak_break_reward, streak_loot_mult,
+    # v3.6
+    COMBO_ATT_NAME, COMBO_DEF_NAME, COMBO_RP, COMBO_SOULS, COMEBACK_LOSSES, COMEBACK_SOULS, DAY_STREAK_REWARDS,
+    DEF_FLOURISH, GUESS_DAILY, GUESS_MAX, GUESS_RP, RISK_DEF_LOOT_MULT, RISK_DEF_RP, RISK_DMG_MULT, RISK_HELP, RISK_LOOT_MULT,
+    RISK_LOSE_RP, RISK_LOSE_SURV, RISK_MIN_SURV, RISK_WIN_RP, RIVAL_RP, STREAK_BREAK_MIN, WIN_FLOURISH, ach_due, chest_roll,
+    combo_fresh, combo_need, combo_step, combo_text, rival_banner, rival_level, rival_line, scene_line, trial_text,
+    trials_done,
 )
-from config import GS, log
+from config import GS, IR_OFFSET, log
 from database import store
 from economy import burn, credit, debit, log_tx
 from players import adjust_survival, grant, refresh_titles
@@ -52,7 +60,8 @@ from weekly import add_guild_pts
 CLASH_WINDOW = 45                # ثانیه‌ی دفاعِ مدافع
 PICK_TTL_MIN = 3                 # عمرِ پنلِ انتخابِ ژست (دقیقه)
 STALE_SECS = 15 * 60             # برخوردِ باز/نیمه‌کاره بعد از این مدت منقضی میشه
-SPAR_PAIR_COOLDOWN = 5 * 60
+SPAR_PAIR_COOLDOWN = 45             # ثانیه؛ ریمچِ تمرینی سریع (سقفِ پاداشِ روزانه جلوی فارم رو می‌گیره)
+NUDGE_AT = 16                    # ⏰ چند ثانیه مونده به پایانِ دفاع، مدافع منشن میشه
 SPAR_DAILY_REWARDS = 5           # تمرین‌هایی که تو روز XP/RP می‌دن
 SPAR_XP_WIN, SPAR_XP_LOSE = 8, 5
 TAUNT_COOLDOWN, TAUNT_DAILY, TAUNT_REV_SECS = 10 * 60, 6, 3600
@@ -213,24 +222,33 @@ def _checks(kind: str, adoc: dict, tdoc: dict, now: float) -> tuple:
     return None, revenge, charges, base_t
 
 
-def _def_kb(oid, tid: int, special: bool = False, sa: int = 0, sd: int = 0, social: bool = True, ba: int = 0, bd: int = 0):
-    codes = list(DEF_BASE) + (["v"] if special else [])
-    rows = [[btn(f"{DEF[c][0]} {_DEF_SHORT[c]}", f"sk:df:{c}:{oid}:{tid}", _DEF_COLOR[c]) for c in codes]]
-    if social:        # 🔔 حمایتِ رایگان + 🎲 شرطِ تماشاچی‌ها (فقط حمله‌ی واقعی)
-        rows.append([btn(f"🔔 مهاجم ({sa})", f"sk:su:a:{oid}:0", "blue"), btn(f"🔔 مدافع ({sd})", f"sk:su:d:{oid}:0", "blue")])
-        rows.append([btn(f"🎲 {SBET_STAKE} روی مهاجم ({ba})", f"sk:sb:a:{oid}:0", "red"), btn(f"🎲 {SBET_STAKE} روی مدافع ({bd})", f"sk:sb:d:{oid}:0", "green")])
-    return kb(*rows)
-
-
 def _bet_counts(c: dict) -> tuple:
     bets = c.get("bets") or []
     return sum(1 for b in bets if b["side"] == "a"), sum(1 for b in bets if b["side"] == "d")
 
 
-def _pick_kb(kind: str, aid: int, tid: int, special: bool = False):
+def _kb_from(c: dict):
+    """کیبوردِ پنلِ دفاع از رویِ سندِ برخورد: دفاع‌ها + 🔔 حمایت + 🎲 شرط + 🔮 حدسِ تماشاچی‌ها (فقط حمله‌ی واقعی)."""
+    oid, tid = c["_id"], c["t"]
+    codes = list(DEF_BASE) + (["v"] if c.get("dspec") else [])
+    rows = [[btn(f"{DEF[x][0]} {_DEF_SHORT[x]}", f"sk:df:{x}:{oid}:{tid}", _DEF_COLOR[x]) for x in codes]]
+    if c.get("kind") == "attack":
+        sa, sd = len(c.get("sup_a", [])), len(c.get("sup_d", []))
+        ba, bd = _bet_counts(c)
+        rows.append([btn(f"🔔 مهاجم ({sa})", f"sk:su:a:{oid}:0", "blue"), btn(f"🔔 مدافع ({sd})", f"sk:su:d:{oid}:0", "blue")])
+        rows.append([btn(f"🎲 {SBET_STAKE} روی مهاجم ({ba})", f"sk:sb:a:{oid}:0", "red"), btn(f"🎲 {SBET_STAKE} روی مدافع ({bd})", f"sk:sb:d:{oid}:0", "green")])
+        rows.append([btn(f"🔮{ATT[x][0]}", f"sk:gs:{x}:{oid}:0", _ATT_COLOR[x]) for x in ATT_BASE]
+                    + [btn(f"👁 {len(c.get('guesses', []))}", f"sk:gs:i:{oid}:0", "blue")])
+    return kb(*rows)
+
+
+def _pick_kb(kind: str, aid: int, tid: int, special: bool = False, risky_ok: bool = False):
     ts = _tsmin()
     codes = list(ATT_BASE) + (["x"] if special else [])
-    return kb([btn(f"{ATT[c][0]} {_ATT_SHORT[c]}", f"sk:ap:{_KIND_CODE[kind]}:{c}:{tid}:{ts}:{aid}", _ATT_COLOR[c]) for c in codes])
+    rows = [[btn(f"{ATT[c][0]} {_ATT_SHORT[c]}", f"sk:ap:{_KIND_CODE[kind]}:{c}:{tid}:{ts}:{aid}", _ATT_COLOR[c]) for c in codes]]
+    if risky_ok and kind == "attack":      # 🩸 همون ژست‌ها ولی همه‌یا‌هیچ (آخرِ callback: r)
+        rows.append([btn(f"🩸{ATT[c][0]} ریسکی", f"sk:ap:a:{c}:{tid}:{ts}:{aid}:r", "red") for c in ATT_BASE])
+    return kb(*rows)
 
 
 def _h2h_rec(doc: dict, opp: int) -> dict:
@@ -241,7 +259,7 @@ def _h2h_line(adoc: dict, tdoc: dict) -> Optional[str]:
     r = _h2h_rec(adoc, tdoc["user_id"])
     if not r:
         return None
-    return f"📊 سابقه با {_nm(tdoc)}: {int(r.get('w', 0))} برد · {int(r.get('l', 0))} باخت"
+    return rival_line(_nm(tdoc), int(r.get("w", 0)), int(r.get("l", 0)))
 
 
 async def _h2h(uid: int, opp: int, won: bool):
@@ -263,6 +281,77 @@ async def _add_focus(uid: int, n: int) -> int:
         [{"$set": {"sk_focus": {"$min": [FOCUS_MAX, {"$add": [{"$ifNull": ["$sk_focus", 0]}, n]}]}}}],
         return_document=ReturnDocument.AFTER)
     return int((d or {}).get("sk_focus", 0))
+
+
+def _dnum() -> int:
+    """شماره‌ی روز (به وقتِ ایران) برای شمارشِ روزهای پشت‌سرهم."""
+    return (utcnow() + IR_OFFSET).toordinal()
+
+
+async def _bump(uid: int, field: str, n: int = 1):
+    await store.users.update_one({"user_id": uid}, {"$inc": {field: n}})
+
+
+async def _award_titles(uid: int, name: str) -> list:
+    """🏷 لقب‌های تازه‌رسیده (اتمیک؛ هر لقب فقط یک‌بار)."""
+    doc = await store.get(uid)
+    out = []
+    for t in (ach_due(doc) if doc else []):
+        if await store.users.find_one_and_update({"user_id": uid, "titles": {"$ne": t}}, {"$addToSet": {"titles": t}}):
+            out.append(f"🏷 لقبِ تازه برای <b>{name}</b>: {t}")
+    return out
+
+
+async def _trial(uid: int, key: str, name: str) -> list:
+    """🎯 پیشرفتِ چالش‌های روز؛ وقتی هر سه کامل شد یه صندوقِ متغیر (یک‌بار در روز، اتمیک)."""
+    today = day_key()
+    d = await store.users.find_one_and_update(
+        {"user_id": uid},
+        [{"$set": {"sk_dq": {"$cond": [
+            {"$eq": [{"$ifNull": ["$sk_dq.day", ""]}, today]},
+            {"$mergeObjects": ["$sk_dq", {key: {"$add": [{"$ifNull": [f"$sk_dq.{key}", 0]}, 1]}}]},
+            {"day": today, key: 1}]}}}],
+        return_document=ReturnDocument.AFTER)
+    if not trials_done((d or {}).get("sk_dq"), today):
+        return []
+    got = await store.users.find_one_and_update({"user_id": uid, "sk_dq.day": today, "sk_dq.done": {"$ne": True}}, {"$set": {"sk_dq.done": True}})
+    if not got:
+        return []
+    cname, gs, foc = chest_roll(random)
+    await grant(uid, gold=gs)
+    if foc:
+        await _add_focus(uid, foc)
+    return [f"🎯 چالش‌های روزِ <b>{name}</b> کامل شد! {cname}: 🪙 +{gs} {GS}" + (f" · ⚡ +{foc} تمرکز" if foc else "")]
+
+
+async def _day_streak(uid: int, name: str) -> list:
+    """🔥 روزهای پشت‌سرهمِ حضور تو میدان (فقط اولین برخوردِ روز حساب میشه؛ ادعای اتمیک)."""
+    ordn = _dnum()
+    before = await store.users.find_one_and_update({"user_id": uid, "sk_ds_ord": {"$ne": ordn}}, {"$set": {"sk_ds_ord": ordn}},
+                                                   return_document=ReturnDocument.BEFORE)
+    if before is None:
+        return []
+    n = int(before.get("sk_ds_n", 0)) + 1 if int(before.get("sk_ds_ord", 0) or 0) == ordn - 1 else 1
+    await store.users.update_one({"user_id": uid}, {"$set": {"sk_ds_n": n}, "$max": {"sk_ds_best": n}})
+    lines = []
+    if n >= 2:
+        lines.append(f"🔥 <b>{name}</b>: روزِ {n}ُم پشت‌سرهم تو میدان")
+    rw = DAY_STREAK_REWARDS.get(n)
+    if rw:
+        xp, gs, foc = rw
+        kw = {k: v for k, v in (("xp", xp), ("gold", gs)) if v}
+        if kw:
+            await grant(uid, **kw)
+        if foc:
+            await _add_focus(uid, foc)
+        lines.append("🎁 جایزه‌ی وفاداری: " + " · ".join(x for x in (f"⭐ +{xp} XP" if xp else "", f"🪙 +{gs} {GS}" if gs else "", f"⚡ +{foc} تمرکز" if foc else "") if x))
+    return lines
+
+
+async def _lstreak(winner: int, loser: int):
+    """💢 شمارنده‌ی باختِ پشت‌سرهم (برای «جان‌سخت»)."""
+    await store.users.update_one({"user_id": winner}, {"$set": {"sk_lstreak": 0}})
+    await store.users.update_one({"user_id": loser}, {"$inc": {"sk_lstreak": 1}})
 
 
 # ───────────────────────────── ⚔️ حمله / 🥋 تمرین: پنلِ انتخابِ ژست ─────────────────────────────
@@ -287,15 +376,27 @@ async def attack_open(m, adoc: dict, tdoc: dict, kind: str = "attack"):
     h2 = _h2h_line(adoc, tdoc) if kind == "attack" else None
     if h2:
         lines.append(h2)
+    risky_ok = kind == "attack" and int(adoc.get("survival_rate", 100)) >= RISK_MIN_SURV
     if kind == "attack":
         lines.append(f"🔋 شارژ: {charges}/{MAX_CHARGES} · ⚡ تمرکز: {focus}/{FOCUS_MAX}" + (" — ✨ ژستِ ویژه آماده‌ست!" if special else "")
                      + (" · 💰 غارتِ بیشتر (جنگ/انتقام)" if high else ""))
         lines.append(edict_text(day_key()))
+        lines.append(combo_text(adoc.get("sk_cb"), adoc.get("sk_cb_t"), ATT, ATT_BASE, now))
+        dtxt = combo_need(tdoc.get("sk_cbd"), tdoc.get("sk_cbd_t"), DEF_BASE, now)
+        if dtxt:
+            lines.append(f"🏰 {_nm(tdoc)} تو دیوارِ سه‌لایه‌ست؛ دفاعِ بعدی متفاوت = +۱🕯 برای مدافع (حدسِ ژستش با تو!)")
+        if int(tdoc.get("sk_streak", 0)) >= STREAK_BREAK_MIN:
+            bg, bx = streak_break_reward(int(tdoc.get("sk_streak", 0)))
+            lines.append(f"⛓ {_nm(tdoc)} زنجیره‌ی {int(tdoc.get('sk_streak', 0))}تایی داره؛ شکستنش = 🪙 +{bg} {GS} · ⭐ +{bx} XP")
+        if int(adoc.get("sk_lstreak", 0)) >= COMEBACK_LOSSES:
+            lines.append(f"💢 جان‌سخت فعاله! برخوردِ بعدیت +{COMEBACK_SOULS}🕯 با شروع میشه.")
+        if risky_ok:
+            lines.append(RISK_HELP)
     else:
         lines.append("🥋 دوستانه: بدونِ ضرر و غارت؛ فقط XP و RP")
     await m.reply(panel("orange" if kind == "attack" else "green", icon, f"{title} — ژستت رو انتخاب کن", lines,
                         "🎯 ژستِ تو مخفی می‌مونه تا حریف دفاعش رو بزنه.\n⏳ این پنل ۳ دقیقه اعتبار داره."),
-                  reply_markup=_pick_kb(kind, aid, tid, special))
+                  reply_markup=_pick_kb(kind, aid, tid, special, risky_ok))
 
 
 async def _end_panel(cq, text: str, color: str = "orange", icon: str = "⚔️", title: str = "حمله"):
@@ -305,7 +406,7 @@ async def _end_panel(cq, text: str, color: str = "orange", icon: str = "⚔️",
         log.debug("arena panel edit failed: %s", e)
 
 
-async def _commit(cq, bot: Bot, kind: str, st: str, aid: int, tid: int):
+async def _commit(cq, bot: Bot, kind: str, st: str, aid: int, tid: int, risky: bool = False):
     """مرحله‌ی ۲: ثبتِ ژست، خرجِ شارژ و ساختِ برخورد؛ پنل برای دفاعِ مدافع تعویض میشه."""
     now = time.time()
     icon, title = ("⚔️", "حمله") if kind == "attack" else ("🥋", "تمرین")
@@ -324,6 +425,11 @@ async def _commit(cq, bot: Bot, kind: str, st: str, aid: int, tid: int):
                 err = "ژستِ ویژه فقط تو حمله‌ی واقعیه. ✨"
             elif int(adoc.get("sk_focus", 0)) < FOCUS_COST:
                 err = "تمرکزت برای ژستِ ویژه کافی نیست. ⚡"
+        if not err and risky:
+            if kind != "attack" or st not in ATT_BASE:
+                err = "حمله‌ی ریسکی فقط با ژست‌های عادیِ حمله‌ی واقعیه. 🩸"
+            elif int(adoc.get("survival_rate", 100)) < RISK_MIN_SURV:
+                err = f"برای حمله‌ی ریسکی بقات باید حداقل {RISK_MIN_SURV}٪ باشه. 🩸"
         if err:
             await cq.answer()
             await _end_panel(cq, err, "blue", icon, title)
@@ -331,8 +437,12 @@ async def _commit(cq, bot: Bot, kind: str, st: str, aid: int, tid: int):
         upd: dict = {"$inc": {f"sk_st.{st}": 1}}
         if st == "x":
             upd["$inc"]["sk_focus"] = -FOCUS_COST
+        cb_prev = combo_fresh(adoc.get("sk_cb"), adoc.get("sk_cb_t"), ATT_BASE, now) if kind == "attack" else []
+        cb_new, combo_done = combo_step(adoc.get("sk_cb"), adoc.get("sk_cb_t"), st, ATT_BASE, now) if kind == "attack" else ([], False)
         if kind == "attack":
             upd["$set"] = {"sk_charges": charges - 1, "sk_charge_t": (now if charges >= MAX_CHARGES else base_t), f"sk_pair.{tid}": now}
+            if st in ATT_BASE:                      # 🎼 ژستِ ویژه کامبو رو دست نمی‌زنه
+                upd["$set"].update({"sk_cb": cb_new, "sk_cb_t": now})
             if revenge:
                 upd["$unset"] = {f"sk_rev.{tid}": ""}
         else:
@@ -340,7 +450,7 @@ async def _commit(cq, bot: Bot, kind: str, st: str, aid: int, tid: int):
         await store.users.update_one({"user_id": aid}, upd)
         res = await store.clashes.insert_one({
             "kind": kind, "chat_id": cq.message.chat.id, "msg_id": cq.message.message_id, "a": aid, "t": tid, "uids": [aid, tid],
-            "st": st, "revenge": revenge, "status": "wait", "created_at": utcnow(),
+            "st": st, "revenge": revenge, "status": "wait", "created_at": utcnow(), "risky": bool(risky), "combo": bool(combo_done),
             "deadline": utcnow() + timedelta(seconds=CLASH_WINDOW)})
     oid = res.inserted_id
     dspecial = kind == "attack" and int(tdoc.get("sk_focus", 0)) >= FOCUS_COST
@@ -351,12 +461,18 @@ async def _commit(cq, bot: Bot, kind: str, st: str, aid: int, tid: int):
     hl = habit_line(adoc.get("sk_st"), ATT, _nm(adoc))
     if hl:
         lines.append(hl)
+    if kind == "attack":
+        if risky:
+            lines.append(f"🩸 <b>حمله‌ی ریسکی!</b> مهاجم همه‌چیز رو روی این ضربه گذاشته؛ اگه بشکنیش +{RISK_DEF_RP} RP و غارتِ ×{RISK_DEF_LOOT_MULT:g} داری.")
+        if len(cb_prev) == 2 and cb_prev[0] != cb_prev[1]:
+            lines.append(f"🎼 مهاجم تو کامبوئه ({' → '.join(ATT[c][0] for c in cb_prev)} → ؟)؛ ژستِ سومِ متفاوت = +{COMBO_SOULS}🕯 برای مهاجم. جدیه یا بلوف؟ 🤔")
+        lines.append(combo_text(tdoc.get("sk_cbd"), tdoc.get("sk_cbd_t"), DEF, DEF_BASE, now, "🏰 دیوارِ سه‌لایه"))
     await store.clashes.update_one({"_id": oid}, {"$set": {"dspec": dspecial}})
     try:
         await cq.message.edit_text(
             panel("red" if kind == "attack" else "green", icon, f"{title} — نوبتِ دفاع", lines,
                   f"⏳ {CLASH_WINDOW} ثانیه وقت داری. جواب ندی، دفاعِ خودکار (کلاس‌محور) اجرا میشه و پاداشِ دفاع رو از دست میدی."),
-            reply_markup=_def_kb(oid, tid, dspecial, social=(kind == "attack")))
+            reply_markup=_kb_from({"_id": oid, "t": tid, "kind": kind, "dspec": dspecial}))
     except Exception as e:
         log.debug("clash panel edit failed: %s", e)
     await cq.answer("ژستت ثبت شد! حالا نوبتِ دفاعِ حریفه. 🎯")
@@ -382,6 +498,13 @@ async def _defend(cq, bot: Bot, code: str, oid, uid: int):
         return
     await cq.answer(f"{DEF[code][0]} {DEF[code][1]}!")
     await store.users.update_one({"user_id": uid}, {"$inc": {f"sk_df.{code}": 1}})
+    if clash.get("kind") == "attack" and code in DEF_BASE:       # 🏰 کامبوی دفاع (سه دفاعِ متفاوت پشت‌سرهم)
+        d = await store.get(uid) or {}
+        new, done = combo_step(d.get("sk_cbd"), d.get("sk_cbd_t"), code, DEF_BASE, time.time())
+        await store.users.update_one({"user_id": uid}, {"$set": {"sk_cbd": new, "sk_cbd_t": time.time()}})
+        if done:
+            clash["dcombo"] = True
+            await store.clashes.update_one({"_id": oid}, {"$set": {"dcombo": True}})
     await _resolve(bot, clash)
 
 
@@ -409,7 +532,7 @@ async def _support(cq, bot: Bot, side: str, oid, uid: int):
         return
     await cq.answer("🔔 حمایتت ثبت شد!")
     try:
-        await cq.message.edit_reply_markup(reply_markup=_def_kb(oid, c["t"], bool(c.get("dspec")), len(c.get("sup_a", [])), len(c.get("sup_d", [])), True, *_bet_counts(c)))
+        await cq.message.edit_reply_markup(reply_markup=_kb_from(c))
     except Exception as e:
         log.debug("support markup edit failed: %s", e)
 
@@ -427,6 +550,64 @@ async def _support_rewards(uids: list) -> list:
         await _add_rp(u, 1)
         got += 1
     return [f"🔔 حامیانِ برنده: {got} نفر · +۱ RP"] if got else []
+
+
+async def _guess(cq, bot: Bot, g: str, oid, uid: int):
+    """🔮 تماشاچی‌ها ژستِ مخفیِ مهاجم رو حدس می‌زنن؛ حدسِ درست +۱ RP (سقفِ روزانه) و شمارنده‌ی «غیب‌گو»."""
+    if g == "i":
+        c = await store.clashes.find_one({"_id": oid})
+        await cq.answer(f"🔮 {len((c or {}).get('guesses', []))} نفر حدس زدن. تو هم ژستِ مخفیِ مهاجم رو حدس بزن!")
+        return
+    if g not in ATT_BASE:
+        await cq.answer()
+        return
+    doc = await store.get(uid)
+    if not doc or doc.get("registered") is False:
+        await cq.answer("اول ثبت‌نام کن. 🙂", show_alert=True)
+        return
+    c = await store.clashes.find_one({"_id": oid, "status": "wait", "kind": "attack"})
+    if not c:
+        await cq.answer("این برخورد تموم شده. ⏳")
+        return
+    if uid in c.get("uids", []):
+        await cq.answer("خودت وسطِ ماجرایی! 😄", show_alert=True)
+        return
+    c = await store.clashes.find_one_and_update(
+        {"_id": oid, "status": "wait", "guesses.u": {"$ne": uid}, f"guesses.{GUESS_MAX - 1}": {"$exists": False}},
+        {"$push": {"guesses": {"u": uid, "g": g}}}, return_document=ReturnDocument.AFTER)
+    if not c:
+        await cq.answer("قبلاً حدس زدی یا ظرفیتِ حدس پر شد. 🔮")
+        return
+    await cq.answer(f"🔮 حدست ثبت شد: {ATT[g][0]} {_ATT_SHORT[g]}")
+    try:
+        await cq.message.edit_reply_markup(reply_markup=_kb_from(c))
+    except Exception as e:
+        log.debug("guess markup edit failed: %s", e)
+
+
+async def _guess_rewards(c: dict, st: str) -> list:
+    gs = list(c.get("guesses") or [])
+    if not gs:
+        return []
+    right = [int(x["u"]) for x in gs if x["g"] == st]
+    today, got, names, extra = day_key(), 0, [], []
+    for u in right[:GUESS_MAX]:
+        d = await store.get(u)
+        if not d:
+            continue
+        n = int(d.get("sk_gs_n", 0)) if d.get("sk_gs_day") == today else 0
+        if n >= GUESS_DAILY:
+            continue
+        await store.users.update_one({"user_id": u}, {"$set": {"sk_gs_day": today, "sk_gs_n": n + 1}, "$inc": {"sk_guess_ok": 1}})
+        await _add_rp(u, GUESS_RP)
+        got += 1
+        if len(names) < 3:
+            names.append(_nm(d))
+        extra += await _award_titles(u, _nm(d))
+    if st == "x":
+        return [f"🔮 {len(gs)} نفر حدس زده بودن ولی ژستِ ویژه تو هیچ‌کدوم نبود! ✨"]
+    head = f"🔮 حدسِ تماشاچی‌ها: {len(right)} از {len(gs)} نفر درست زدن" + (f" ({'، '.join(names)}) · +{GUESS_RP} RP" if got else "")
+    return [head] + extra
 
 
 async def _sbet(cq, bot: Bot, side: str, oid, uid: int):
@@ -466,7 +647,7 @@ async def _sbet(cq, bot: Bot, side: str, oid, uid: int):
     await store.users.update_one({"user_id": uid}, {"$set": {"sk_sbet_day": today, "sk_sbet_amt": spent + SBET_STAKE}})
     await cq.answer(f"🎲 {SBET_STAKE} {GS} روی {'مهاجم' if side == 'a' else 'مدافع'} شرط بستی!")
     try:
-        await cq.message.edit_reply_markup(reply_markup=_def_kb(oid, c["t"], bool(c.get("dspec")), len(c.get("sup_a", [])), len(c.get("sup_d", [])), True, *_bet_counts(c)))
+        await cq.message.edit_reply_markup(reply_markup=_kb_from(c))
     except Exception as e:
         log.debug("sbet markup edit failed: %s", e)
 
@@ -519,7 +700,18 @@ async def do_trap(m):
 
 async def _watch_clash(bot: Bot, oid, delay: float):
     try:
-        await asyncio.sleep(delay)
+        if delay > NUDGE_AT + 4:             # ⏰ ثانیه‌های آخر: مدافع منشن میشه (فشارِ اجتماعی تو گروه)
+            await asyncio.sleep(delay - NUDGE_AT)
+            c0 = await store.clashes.find_one_and_update({"_id": oid, "status": "wait", "kind": "attack", "nudged": {"$ne": True}}, {"$set": {"nudged": True}})
+            if c0:
+                try:
+                    td = await store.get(c0["t"])
+                    await bot.send_message(c0["chat_id"], f"⏰ {display(td, link=True)} فقط {NUDGE_AT} ثانیه مونده! دفاعت رو بزن وگرنه دفاعِ خودکار اجرا میشه. 🛡")
+                except Exception as e:
+                    log.debug("clash nudge skipped: %s", e)
+            await asyncio.sleep(NUDGE_AT)
+        else:
+            await asyncio.sleep(delay)
         c = await store.clashes.find_one({"_id": oid, "status": "wait"})
         if not c:
             return
@@ -588,9 +780,11 @@ async def _resolve_inner(clash: dict) -> tuple:
     kind, aid, tid, st, dfn = clash["kind"], clash["a"], clash["t"], clash["st"], clash["dfn"]
     auto = bool(clash.get("auto"))
     revenge = bool(clash.get("revenge"))
+    risky = bool(clash.get("risky")) and kind == "attack"
     now = time.time()
     async with _Locks(aid, tid):
         adoc, tdoc = await store.get(aid), await store.get(tid)
+        an, dn = _nm(adoc), _nm(tdoc)
         res = clash_result(st, dfn)
         mod_notes = []
         res, note = class_edge(res, adoc.get("cls"), tdoc.get("cls"), st, dfn)      # 🎭 تخصصِ کلاس (فقط تساوی‌ها)
@@ -616,8 +810,22 @@ async def _resolve_inner(clash: dict) -> tuple:
             fa["soul"] = min(MAX_SOUL, fa["soul"] + 1)
         elif len(sup_d) - len(sup_a) >= SUPPORT_MARGIN:
             fb["soul"] = min(MAX_SOUL, fb["soul"] + 1)
+        a_combo = kind == "attack" and bool(clash.get("combo"))
+        d_combo = kind == "attack" and bool(clash.get("dcombo")) and not auto
+        if a_combo:                                            # 🎼 کامبوی مهاجم
+            fa["soul"] = min(MAX_SOUL, fa["soul"] + COMBO_SOULS)
+            mod_notes.append(f"{COMBO_ATT_NAME}! <b>{an}</b> +{COMBO_SOULS}🕯")
+        if d_combo:                                            # 🏰 کامبوی مدافع
+            fb["soul"] = min(MAX_SOUL, fb["soul"] + COMBO_SOULS)
+            mod_notes.append(f"{COMBO_DEF_NAME}! <b>{dn}</b> +{COMBO_SOULS}🕯")
+        if kind == "attack":                                   # 💢 جان‌سخت (بعد از ۳ باختِ پشت‌سرهم)
+            if int(adoc.get("sk_lstreak", 0)) >= COMEBACK_LOSSES:
+                fa["soul"] = min(MAX_SOUL, fa["soul"] + COMEBACK_SOULS)
+                mod_notes.append(f"💢 جان‌سخت: <b>{an}</b> +{COMEBACK_SOULS}🕯")
+            if int(tdoc.get("sk_lstreak", 0)) >= COMEBACK_LOSSES:
+                fb["soul"] = min(MAX_SOUL, fb["soul"] + COMEBACK_SOULS)
+                mod_notes.append(f"💢 جان‌سخت: <b>{dn}</b> +{COMEBACK_SOULS}🕯")
         win = run_ai(fa, fb, first=first) == 0
-        an, dn = _nm(adoc), _nm(tdoc)
         ai, att_name = ATT[st]
         di, def_name = DEF[dfn]
         if res > 0:
@@ -626,9 +834,9 @@ async def _resolve_inner(clash: dict) -> tuple:
             edge = f"🧠 {dn} خوندش! +{souls}🕯 برای مدافع و ضربه‌های مهاجم ۱۵٪ ضعیف‌تر"
         else:
             edge = "⚖️ مساوی؛ نبردِ عادی"
-        head = [f"{display(adoc, link=True)} ⚔️ {display(tdoc, link=True)}" + ("  🔥 انتقام!" if revenge else ""),
+        head = [f"{display(adoc, link=True)} ⚔️ {display(tdoc, link=True)}" + ("  🔥 انتقام!" if revenge else "") + ("  🩸 ریسکی!" if risky else ""),
                 f"{ai} {an}: {att_name}   ⟷   {di} {dn}: {def_name}" + (" 🤖" if auto else ""),
-                CLASH_LINES[(st, dfn)].format(a=f"<b>{an}</b>", d=f"<b>{dn}</b>"), edge,
+                scene_line(st, dfn, random).format(a=f"<b>{an}</b>", d=f"<b>{dn}</b>"), edge,
                 f"💥 ضربه‌ها: {an} {fa['dealt']} · {dn} {fb['dealt']}" + (" · 🔁 بازتولد" if fa["used_echo"] or fb["used_echo"] else ""),
                 "┈┈┈┈┈┈┈┈┈┈"]
         for i, nt in enumerate(mod_notes):
@@ -647,14 +855,22 @@ async def _resolve_inner(clash: dict) -> tuple:
         a_streak0, d_streak0 = int(adoc.get("sk_streak", 0)), int(tdoc.get("sk_streak", 0))
         high = bool(tdoc.get("sk_war")) or revenge
         lines, after, rank_lines = list(head), [("attack", aid)], []
+        # 🆚 رقابت: از دیدِ سابقه‌ی قبل از این برخورد (دو طرف یکسانه)
+        rec = _h2h_rec(adoc, tid)
+        n_before = int(rec.get("w", 0)) + int(rec.get("l", 0))
+        riv_lvl, riv_label = rival_level(n_before)
+        riv_rp = RIVAL_RP[riv_lvl]
+        extra: list = []                                         # خطوطِ تازه (کامبو/ریسک/رقابت/چالش/لقب)
         if win:
             streak = a_streak0 + 1
-            mult = streak_loot_mult(streak) * (1.25 if crit else 1.0)
+            mult = streak_loot_mult(streak) * (1.25 if crit else 1.0) * (RISK_LOOT_MULT if risky else 1.0)
             dmg = 5 + int(10 * pct(fa))
             if not high:
                 dmg = max(3, dmg // 2)
             if crit:
                 dmg = int(dmg * 1.5)
+            if risky:
+                dmg = int(dmg * RISK_DMG_MULT)
             dmg = min(dmg, max(0, int(tdoc.get("survival_rate", 100)) - SURV_FLOOR))
             if dmg:
                 tdoc = await adjust_survival(tid, -dmg, "sk_hits_taken")
@@ -673,17 +889,19 @@ async def _resolve_inner(clash: dict) -> tuple:
                 "$set": {"sk_streak": streak}, "$max": {"sk_best": streak}, "$inc": {"sk_wins": 1, "sk_loot": loot + bounty}})
             await grant(aid, xp=random.randint(10, 20) + (5 if crit else 0))
             ed = edict_bonus(day_key(), True, st, dfn)
-            ia = await _add_rp(aid, attack_rp(True, arp, drp, crit, streak) + ed)
+            bonus = (RISK_WIN_RP if risky else 0) + (COMBO_RP if a_combo else 0) + riv_rp
+            ia = await _add_rp(aid, attack_rp(True, arp, drp, crit, streak) + ed + bonus)
             it = await _add_rp(tid, defend_rp(False, drp, arp))
             await _h2h(aid, tid, True)
             await _h2h(tid, aid, False)
+            await _lstreak(aid, tid)
             await add_guild_pts(adoc.get("guild"), 3)
             after.append(("atk_win", aid))
-            lines += [f"🏆 <b>{an} پیروز شد!</b>",
+            lines += [f"🏆 <b>{an} پیروز شد!</b>", random.choice(WIN_FLOURISH).format(a=f"<b>{an}</b>"),
                       f"💀 {display(tdoc)} −{dmg}٪ بقا {hp_bar(int(tdoc.get('survival_rate', 0)))}"]
             if loot:
                 lines.append(f"🪙 غارت: +{loot} {GS}" + (f" · زنجیره ×{streak_loot_mult(streak):.1f}" if streak > 1 else "")
-                             + (" · حالت جنگ/انتقام" if high else ""))
+                             + (" · حالت جنگ/انتقام" if high else "") + (f" · 🩸 ریسکی ×{RISK_LOOT_MULT:g}" if risky else ""))
             if bounty:
                 lines.append(f"🎯 جایزه‌ی سر: +{bounty} {GS}")
             if brk_gs:
@@ -693,18 +911,27 @@ async def _resolve_inner(clash: dict) -> tuple:
             lines.append(f"🏅 RP: {an} {ia['delta']:+d} · {dn} {it['delta']:+d}")
             if ed:
                 lines.append(f"📜 فرمانِ امروز: +{ed} RP برای {an}")
+            if risky:
+                extra.append(f"🩸 قمارِ <b>{an}</b> جواب داد! +{RISK_WIN_RP} RP")
+                await _bump(aid, "sk_risk_w")
+            if a_combo:
+                extra.append(f"{COMBO_ATT_NAME}: +{COMBO_RP} RP")
+            if riv_rp:
+                extra.append(f"{riv_label}: برنده +{riv_rp} RP")
             lines.append(f"🛡 {dn} ۲۰ دقیقه سپر گرفت؛ ولی ۲۴ ساعت حق انتقام داره!")
             rank_lines = _rankup(an, ia) + _rankup(dn, it)
             if await _first_win(aid):
                 await grant(aid, xp=FIRST_WIN_XP)
                 rank_lines += _rankup(an, await _add_rp(aid, FIRST_WIN_RP))
                 lines.append(f"🌅 اولین بردِ امروزِ {an}: +{FIRST_WIN_XP} XP · +{FIRST_WIN_RP} RP")
-            await _push_log(tid, f"⚔️ {an} بهت زد: −{dmg}٪ بقا" + (f"، −{loot} {GS}" if loot else "") + (" (بحرانی!)" if crit else ""))
+            extra += await _trial(aid, "a", an)
+            await _push_log(tid, f"⚔️ {an} بهت زد: −{dmg}٪ بقا" + (f"، −{loot} {GS}" if loot else "") + (" (بحرانی!)" if crit else "") + (" (ریسکی)" if risky else ""))
             await _push_log(aid, f"🏆 به {dn} حمله کردی و بردی" + (f": +{loot} {GS}" if loot else ""))
-            markup = kb([btn("🔥 انتقام", f"sk:rv:{aid}:{tid}", "red"), btn("🏟 میدان", "sk:ar:0", "blue")])
+            markup = kb([btn("🔥 انتقام", f"sk:rv:{aid}:{tid}", "red"), btn("🥋 ریمچِ تمرینی", f"sk:rm:{aid}:{tid}", "green")],
+                        [btn("🏟 میدان", "sk:ar:0", "blue")])
             color = "red"
         else:
-            dmg = min(random.randint(3, 8), max(0, int(adoc.get("survival_rate", 100)) - SURV_FLOOR))
+            dmg = min(random.randint(3, 8) + (RISK_LOSE_SURV if risky else 0), max(0, int(adoc.get("survival_rate", 100)) - SURV_FLOOR))
             if dmg:
                 await adjust_survival(aid, -dmg, "sk_hits_taken")
             streak = d_streak0 + 1
@@ -714,7 +941,7 @@ async def _resolve_inner(clash: dict) -> tuple:
             dloot = 0
             if not auto:
                 g = int(adoc.get("gold", 0))
-                amt = max(0, min(int(DEF_LOOT_CAP * (1.5 if read else 1.0)), int(g * DEF_LOOT_PCT), g - GOLD_FLOOR))
+                amt = max(0, min(int(DEF_LOOT_CAP * (1.5 if read else 1.0) * (RISK_DEF_LOOT_MULT if risky else 1.0)), int(g * DEF_LOOT_PCT), g - GOLD_FLOOR))
                 if amt and await debit(aid, amt, "skirmish_def_lost", burn_it=False):
                     await credit(tid, amt, "skirmish_def_loot")
                     dloot = amt
@@ -737,20 +964,24 @@ async def _resolve_inner(clash: dict) -> tuple:
                 "$set": {"sk_streak": streak}, "$max": {"sk_best": streak}, "$inc": {"sk_def_wins": 1, "sk_loot": dloot}})
             await grant(tid, xp=(4 if auto else 8 + (5 if read else 0)))
             ed = edict_bonus(day_key(), False, st, dfn)
-            ia = await _add_rp(aid, attack_rp(False, arp, drp))
-            it = await _add_rp(tid, defend_rp(True, drp, arp, read) + ed)
+            bonus = (RISK_DEF_RP if risky else 0) + (COMBO_RP if d_combo else 0) + riv_rp
+            ia = await _add_rp(aid, attack_rp(False, arp, drp) - (RISK_LOSE_RP if risky else 0))
+            it = await _add_rp(tid, defend_rp(True, drp, arp, read) + ed + bonus)
             await _h2h(aid, tid, False)
             await _h2h(tid, aid, True)
+            await _lstreak(tid, aid)
             await add_guild_pts(tdoc.get("guild"), 2)
             after.append(("defend", tid))
             priest = tdoc.get("cls") == "priest"
             if priest:                                          # ✨ کشیشِ پیروز زخمش رو ترمیم می‌کنه
                 await adjust_survival(tid, PRIEST_DEF_HEAL, "blessings_received")
-            lines += [f"🛡 <b>{dn} دفاع کرد!</b> حمله‌ی {an} شکست خورد.", f"🩸 {an} −{dmg}٪ بقا بابت حمله‌ی ناموفق."]
+            lines += [f"🛡 <b>{dn} دفاع کرد!</b> حمله‌ی {an} شکست خورد.", random.choice(DEF_FLOURISH).format(d=f"<b>{dn}</b>"),
+                      f"🩸 {an} −{dmg}٪ بقا بابت حمله‌ی ناموفق."]
             if priest:
                 lines.append(f"✨ کشیش: {dn} +{PRIEST_DEF_HEAL}٪ بقا برگردوند.")
             if dloot:
-                lines.append(f"🪙 پاداشِ دفاع: {dn} +{dloot} {GS}" + (" (خوندنِ کاملِ حرکت ×۱٫۵)" if read else ""))
+                lines.append(f"🪙 پاداشِ دفاع: {dn} +{dloot} {GS}" + (" (خوندنِ کاملِ حرکت ×۱٫۵)" if read else "")
+                             + (f" · 🩸 ریسکِ مهاجم ×{RISK_DEF_LOOT_MULT:g}" if risky else ""))
             if brk_gs:
                 lines.append(f"⛓ زنجیره‌ی {a_streak0}تاییِ {an} شکست! {dn}: 🪙 +{brk_gs} {GS} · ⭐ +{brk_xp} XP")
             if auto:
@@ -763,19 +994,47 @@ async def _resolve_inner(clash: dict) -> tuple:
                 lines.append(trap_line)
             if ed:
                 lines.append(f"📜 فرمانِ امروز: +{ed} RP برای {dn}")
+            if risky:
+                extra.append(f"🩸 قمارِ <b>{an}</b> باخت: −{RISK_LOSE_SURV}٪ بقای اضافه و −{RISK_LOSE_RP} RP · {dn} +{RISK_DEF_RP} RP")
+            if d_combo:
+                extra.append(f"{COMBO_DEF_NAME}: +{COMBO_RP} RP")
+            if riv_rp:
+                extra.append(f"{riv_label}: برنده +{riv_rp} RP")
             rank_lines = _rankup(an, ia) + _rankup(dn, it)
             if await _first_win(tid):
                 await grant(tid, xp=FIRST_WIN_XP)
                 rank_lines += _rankup(dn, await _add_rp(tid, FIRST_WIN_RP))
                 lines.append(f"🌅 اولین بردِ امروزِ {dn}: +{FIRST_WIN_XP} XP · +{FIRST_WIN_RP} RP")
+            extra += await _trial(tid, "d", dn)
             await _push_log(aid, f"🛡 {dn} حمله‌ات رو دفع کرد: −{dmg}٪ بقا" + (f"، −{dloot} {GS}" if dloot else ""))
             await _push_log(tid, f"🏆 حمله‌ی {an} رو دفع کردی" + (f": +{dloot} {GS}" if dloot else ""))
-            markup = kb([btn("🏟 میدان", "sk:ar:0", "blue")])
+            markup = kb([btn("🥋 ریمچِ تمرینی", f"sk:rm:{aid}:{tid}", "green"), btn("🏟 میدان", "sk:ar:0", "blue")])
             color = "blue"
+        # ── 🧠 خوندنِ حرکت، 🎼 کامبو، 🆚 رقابت، 🔥 روزهای پشت‌سرهم، 🏷 لقب‌ها
+        if res > 0 and not auto:
+            await _bump(aid, "sk_reads")
+            extra += await _trial(aid, "r", an)
+        elif res < 0 and not auto:
+            await _bump(tid, "sk_reads")
+            extra += await _trial(tid, "r", dn)
+        if a_combo:
+            await _bump(aid, "sk_combos")
+        if d_combo:
+            await _bump(tid, "sk_combos")
+        n_after = n_before + 1
+        rb = rival_banner(an, dn, n_after)
+        if rb:
+            extra.append(rb)
+        if n_after >= 10:
+            await store.users.update_many({"user_id": {"$in": [aid, tid]}}, {"$max": {"sk_riv10": 1}})
+        extra += await _day_streak(aid, an) + await _day_streak(tid, dn)
+        extra += await _award_titles(aid, an) + await _award_titles(tid, dn)
         a_f = (1 if res < 0 else 0) + (0 if win else 1)            # ⚡ بازنده و «خونده‌شده» تمرکز جمع می‌کنن
         d_f = (1 if res > 0 else 0) + (1 if win else 0)
         fa_n, fd_n = await _add_focus(aid, a_f), await _add_focus(tid, d_f)
         lines.append(f"⚡ تمرکز: {an} {fa_n}/{FOCUS_MAX} · {dn} {fd_n}/{FOCUS_MAX}" + ("  ← ژستِ ویژه آماده!" if FOCUS_COST <= max(fa_n, fd_n) else ""))
+        lines += extra
+        lines += await _guess_rewards(clash, st)
         lines += await _support_rewards(sup_a if win else sup_d)
         if rank_lines:
             lines += rank_lines + [random.choice(RANK_UP_LINES)]
@@ -805,7 +1064,7 @@ async def _spar_effects(clash: dict, adoc: dict, tdoc: dict, win: bool, head: li
             lines.append(f"😴 {_nm(d)}: سقفِ پاداشِ تمرینِ امروز پر شده ({SPAR_DAILY_REWARDS} بار)")
     await _push_log(aid, f"🥋 با {dn} تمرین کردی: " + ("بردی" if win else "باختی"))
     await _push_log(tid, f"🥋 با {an} تمرین کردی: " + ("باختی" if win else "بردی"))
-    return panel("green", "🥋", "تمرین تموم شد", lines), kb([btn("🏟 میدان", "sk:ar:0", "blue")]), after, None
+    return panel("green", "🥋", "تمرین تموم شد", lines), kb([btn("🔁 ریمچ", f"sk:rm:{aid}:{tid}", "green"), btn("🏟 میدان", "sk:ar:0", "blue")]), after, None
 
 
 # ───────────────────────────── 😏 تحقیر ─────────────────────────────
@@ -1113,6 +1372,22 @@ async def do_arena(m):
     foc = int(doc.get("sk_focus", 0))
     lines.append(f"⚡ تمرکز: {foc}/{FOCUS_MAX}" + (" — ✨/⛓ ژستِ ویژه آماده!" if foc >= FOCUS_COST else ""))
     lines.append(edict_text(day_key()))
+    lines.append(trial_text(doc.get("sk_dq"), day_key()))
+    ds = int(doc.get("sk_ds_n", 0))
+    if ds >= 1 and int(doc.get("sk_ds_ord", 0) or 0) >= _dnum() - 1:
+        lines.append(f"🔥 روزِ {ds}ُم پشت‌سرهم تو میدان (رکورد {int(doc.get('sk_ds_best', 0))})")
+    lines.append(combo_text(doc.get("sk_cb"), doc.get("sk_cb_t"), ATT, ATT_BASE, now))
+    lines.append(combo_text(doc.get("sk_cbd"), doc.get("sk_cbd_t"), DEF, DEF_BASE, now, "🏰 دیوارِ سه‌لایه"))
+    lines.append(f"🧠 خوندنِ حریف: {int(doc.get('sk_reads', 0))} · 🔮 حدسِ درست: {int(doc.get('sk_guess_ok', 0))} · 🎼 کامبو: {int(doc.get('sk_combos', 0))}")
+    h2h = doc.get("sk_h2h") or {}
+    if h2h:                                                       # 🆚 رقیبِ اصلی: بیشترین برخورد
+        k, rec = max(h2h.items(), key=lambda kv: int(kv[1].get("w", 0)) + int(kv[1].get("l", 0)))
+        rd = await store.get(int(k))
+        rl = rival_line(_nm(rd), int(rec.get("w", 0)), int(rec.get("l", 0))) if rd else None
+        if rl:
+            lines.append(rl.replace("سابقه با", "رقیبِ اصلی:", 1))
+    if int(doc.get("sk_lstreak", 0)) >= COMEBACK_LOSSES:
+        lines.append(f"💢 جان‌سخت فعاله: برخوردِ بعدی +{COMEBACK_SOULS}🕯")
     if float(doc.get("sk_trap", 0)) > now:
         flags.append(f"🪤 تله ({_dur(doc['sk_trap'] - now)})")
     if flags:
@@ -1131,7 +1406,7 @@ async def do_arena(m):
     if logs:
         lines += ["┈┈┈┈┈┈┈┈┈┈", "📜 <b>نبردنامه</b>:"] + [f"• {_ago(e['t'])}: {e['x']}" for e in reversed(logs)]
     await show(m, panel("red", "🏟", "میدانِ نبرد", lines,
-                        "⚔️ ریپلای + «حمله» · 🥋 «تمرین» · 😏 «تحقیرش کن» · 🎲 «شرط ۵۰»"),
+                        "⚔️ ریپلای + «حمله» (🩸 ریسکی هم داره) · 🥋 «تمرین» · 😏 «تحقیرش کن» · 🎲 «شرط ۵۰» · 🔮 تو حمله‌ی بقیه حدس بزن"),
                kb(*rows, [btn("🏆 برترین‌ها", f"sk:lb:{uid}", "green"), btn("🔄 تازه‌سازی", f"sk:ar:{uid}", "blue")],
                   [btn("🌙 منو", f"m:main:{uid}", "blue")]))
 
@@ -1151,7 +1426,8 @@ async def do_arena_board(m):
 # ───────────────────────────── 🎛 کال‌بک‌ها ─────────────────────────────
 async def arena_cb(cq, bot: Bot, parts: list):
     """sk:ap:<k>:<st>:<tid>:<ts>:<aid> · sk:df:<c>:<oid>:<tid> · sk:rv:<aid>:<me> · sk:ar:<n> · sk:lb:<n>
-       sk:rp:<x>:<tid>:<amt>:<ts>:<aid> · sk:rr:<x>:<oid>:<tid> · sk:rn:<oid>:<tid>"""
+       sk:rp:<x>:<tid>:<amt>:<ts>:<aid> · sk:rr:<x>:<oid>:<tid> · sk:rn:<oid>:<tid>
+       sk:ap:…:<aid>[:r] (ریسکی) · sk:gs:<h|q|f|i>:<oid>:0 (حدس) · sk:rm:<aid>:<tid> (ریمچ)"""
     uid = cq.from_user.id
     try:
         act = parts[1]
@@ -1159,10 +1435,12 @@ async def arena_cb(cq, bot: Bot, parts: list):
             kind, st, tid, ts = _CODE_KIND.get(parts[2]), parts[3], int(parts[4]), int(parts[5])
             if not kind or st not in ATT:
                 await cq.answer()
+            elif int(parts[6]) != uid:
+                await cq.answer("این پنل مالِ تو نیست؛ خودت «حمله» رو بزن. 😉", show_alert=True)
             elif _tsmin() - ts > PICK_TTL_MIN:
                 await cq.answer("این پنل قدیمی شده؛ دوباره «حمله» رو بزن. ⏳", show_alert=True)
             else:
-                await _commit(cq, bot, kind, st, uid, tid)
+                await _commit(cq, bot, kind, st, uid, tid, risky=(len(parts) >= 8 and parts[7] == "r"))
         elif act == "df" and len(parts) >= 5:
             await _defend(cq, bot, parts[2], ObjectId(parts[3]), uid)
         elif act == "rv" and len(parts) >= 4:
@@ -1171,6 +1449,10 @@ async def arena_cb(cq, bot: Bot, parts: list):
             await _sbet(cq, bot, parts[2], ObjectId(parts[3]), uid)
         elif act == "su" and len(parts) >= 5:
             await _support(cq, bot, parts[2], ObjectId(parts[3]), uid)
+        elif act == "gs" and len(parts) >= 5:
+            await _guess(cq, bot, parts[2], ObjectId(parts[3]), uid)
+        elif act == "rm" and len(parts) >= 4:
+            await _rematch(cq, bot, int(parts[2]), int(parts[3]), uid)
         elif act == "ar":
             await cq.answer()
             await do_arena(CbMsg(cq, bot))
@@ -1181,6 +1463,8 @@ async def arena_cb(cq, bot: Bot, parts: list):
             x, tid, amt, ts = parts[2], int(parts[3]), int(parts[4]), int(parts[5])
             if x not in RPS:
                 await cq.answer()
+            elif int(parts[6]) != uid:
+                await cq.answer("این پنل مالِ تو نیست. 😉", show_alert=True)
             elif _tsmin() - ts > PICK_TTL_MIN:
                 await cq.answer("این پنل قدیمی شده؛ دوباره «شرط» رو بزن. ⏳", show_alert=True)
             else:
@@ -1209,6 +1493,23 @@ async def _revenge(cq, bot: Bot, target_id: int, uid: int):
         return
     await cq.answer()
     await attack_open(CbMsg(cq, bot), adoc, tdoc, "attack")
+
+
+async def _rematch(cq, bot: Bot, a_id: int, t_id: int, uid: int):
+    """🥋 ریمچِ تمرینیِ یک‌کلیکی؛ فقط خودِ دو طرف می‌تونن بزنن (بدونِ ضرر؛ پاداشِ روزانه سقف داره)."""
+    if uid not in (a_id, t_id):
+        await cq.answer("این ریمچ مالِ تو نیست. 😉", show_alert=True)
+        return
+    if cq.message.chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
+        await cq.answer("ریمچ فقط تو گروه ممکنه. 👥", show_alert=True)
+        return
+    opp = t_id if uid == a_id else a_id
+    adoc, tdoc = await store.get(uid), await store.get(opp)
+    if not adoc or not tdoc:
+        await cq.answer("بازیکن پیدا نشد.", show_alert=True)
+        return
+    await cq.answer()
+    await attack_open(CbMsg(cq, bot), adoc, tdoc, "spar")
 
 
 # ───────────────────────────── 🪝 هوک‌ها (از skirmish.py) ─────────────────────────────
