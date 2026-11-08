@@ -101,6 +101,7 @@ async def finish_registration(user: User, cls_key: Optional[str] = None, boon_ke
             "gclass": prof["gclass"], "cheat": prof["cheat"], "cheat_uses": 0, "cheat_charges": 0,
             "form": form, "cheat_skill": prof["cheat_skill"], "world": random.choice(WORLDS),
             "survival_rate": rate, "status": status_for(rate), "first_name": user.full_name,
+            "tut": {}, "unlock_seen": 1,      # 🎓 تورِ شروع + اعلامِ بازشدنِ بخش‌ها (فقط بازیکنِ جدید)
         }, "$push": {"titles": "روحِ ثبت‌شده‌ی ایزدبانو"}},
     )
     if res.modified_count == 0:
@@ -124,7 +125,7 @@ def reg_done_text(doc: dict, cls_key: str, boon_key: Optional[str] = None) -> st
         "┈┈┈┈┈┈┈┈┈┈",
         *stat_lines(doc),
         "🏷 لقب: «روحِ ثبت‌شده‌ی ایزدبانو»",
-    ], f"💅 <i>«{b['quip'] if b else 'هدیه‌ت رو بردار و گمشو تو ایسکا.'} حالا برو. هر کاری می‌خوای بکن؛ آخرش مال منی.»</i>\n💡 برای باز کردن منوی بازی بنویس «زندگی من».")
+    ], f"💅 <i>«{b['quip'] if b else 'هدیه‌ت رو بردار و گمشو تو ایسکا.'} حالا برو. هر کاری می‌خوای بکن؛ آخرش مال منی.»</i>\n🎓 یه تورِ ۴ مرحله‌ایِ کوتاه داری و هر مرحله جایزه می‌ده؛ دکمه‌ی «🎯 الان چیکار کنم؟» رو بزن.\n💡 برای باز کردن منوی بازی بنویس «زندگی من».")
 
 
 async def start_registration(m):
@@ -152,5 +153,6 @@ def reg_kb_done(uid: int, with_gift: bool) -> InlineKeyboardMarkup:
     rows = []
     if with_gift:
         rows += [[btn(f"{b['icon']} {b['name']} — {b['desc']}", f"reg:gift:{k}:{uid}", b["color"])] for k, b in BOONS.items()]
-    rows += [[btn("🌍 اولین ماجراجویی", f"x:forest:{uid}", "green"), btn("🌙 منو", f"m:main:{uid}", "blue")]]
+    rows += [[btn("🎯 الان چیکار کنم؟", f"m:next:{uid}", "green")],
+             [btn("🌍 اولین ماجراجویی", f"x:forest:{uid}", "green"), btn("🌙 منو", f"m:main:{uid}", "blue")]]
     return kb(*rows)

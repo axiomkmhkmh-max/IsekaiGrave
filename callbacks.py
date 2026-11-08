@@ -21,7 +21,8 @@ from inventory import send_inventory
 from leaderboard import do_board
 from market import do_buy, drop_offer
 from marriage import do_divorce, do_marry_info, marriage_answer
-from menus import help_kb, hub_kb, hub_text
+from guide import CAT_ACT, INTRO_FEATS, cat_panel, do_next_step, do_skip_tour, intro_once, lock_text
+from menus import help_kb, hub_payload
 from npc import do_npc, do_trade
 from worldnpc import do_cheat, do_use_cheat, do_world, do_world_npc, ensure_gen_profile
 from quests import do_quests
@@ -135,8 +136,8 @@ async def handle_cb(cq: CallbackQuery, bot: Bot):
                 return
             await cq.answer("قرارداد امضا شد! 🎉")
             await safe_edit(cq.message, reg_done_text(ndoc, parts[2], parts[3]),
-                            kb([btn("🌙 باز کردن پنل‌ها", f"m:main:{uid}", "green")],
-                               [btn("🌍 اولین ماجراجویی", f"x:forest:{uid}", "blue")]))
+                            kb([btn("🎯 الان چیکار کنم؟", f"m:next:{uid}", "green")],
+                               [btn("🌍 اولین ماجراجویی", f"x:forest:{uid}", "blue"), btn("🌙 منو", f"m:main:{uid}", "blue")]))
         elif act == "run":
             await cq.answer("فرار؟ 🏃")
             await safe_edit(cq.message, panel("red", "🏃", "فرار ناموفق", [
@@ -151,6 +152,11 @@ async def handle_cb(cq: CallbackQuery, bot: Bot):
     if not registered and not (kind == "m" and parts[1] == "help"):
         await cq.answer("اول ثبت‌نام کن، بعد بیا! 🙂", show_alert=True)
         await reg_prompt(m)
+        return
+
+    # 🔒 دکمه‌ی قفل: هشدارِ «از چه سطحی باز میشه» (باید قبل از cq.answer() خالی بیاد)
+    if kind == "m" and parts[1] == "lock" and len(parts) >= 4:
+        await cq.answer(lock_text(doc, parts[2]), show_alert=True)
         return
 
     await cq.answer()
@@ -198,8 +204,21 @@ async def handle_cb(cq: CallbackQuery, bot: Bot):
         await marriage_answer(m, parts[1] == "yes", parts[2])
     elif kind == "m":
         act = parts[1]
+        if act in INTRO_FEATS:            # 📘 اولین بارِ ورود به یه بخش: توضیحِ کوتاه
+            await intro_once(m, act)
         if act == "main":
-            await safe_edit(cq.message, hub_text(doc), hub_kb(uid))
+            text, markup = await hub_payload(doc)
+            await safe_edit(cq.message, text, markup)
+        elif act == "next":               # 🎯 الان چیکار کنم؟
+            await do_next_step(m, doc)
+        elif act == "tskip":              # ⏭ رد کردنِ تورِ شروع
+            await do_skip_tour(uid)
+            doc = await store.get(uid)
+            text, markup = await hub_payload(doc)
+            await safe_edit(cq.message, text, markup)
+        elif act in CAT_ACT:              # دسته‌های منو (نبرد / اقتصاد / ...)
+            text, markup = cat_panel(uid, doc, CAT_ACT[act])
+            await safe_edit(cq.message, text, markup)
         elif act in ("go", "npc"):      # «npc»: پنل‌های قدیمیِ قبل از NPCهای زنده
             rows = [[btn(f"{b['icon']} {b['name']}", f"x:{k}:{uid}", b["color"])] for k, b in BIOMES.items()]
             await safe_edit(cq.message, panel("green", "🌍", "کجا بریم؟", [

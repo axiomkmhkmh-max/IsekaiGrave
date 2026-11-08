@@ -27,6 +27,7 @@ from render import render_rebirth, render_scene, stat_lines
 from territories import terr_income
 from ui import panel, say
 from utils import esc, gid
+from guide import pop_unlock_news
 from weekly import add_guild_pts
 
 
@@ -162,6 +163,7 @@ async def do_explore(m: Message, key: str):
 
     if leveled:
         lines.append(f"🆙 <b>تبریک! سطحت بالا رفت!</b> حالا سطح {doc.get('level', 1)} هستی. 🎉")
+        lines += await pop_unlock_news(doc)         # 🔓 بخش‌های جدیدی که با این سطح باز شدن
 
     if died:
         rdoc, new = await reincarnate(uid, chat_id=gid(m))

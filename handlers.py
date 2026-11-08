@@ -14,7 +14,7 @@ from config import log, runtime
 from content import GODDESS_NAME, GODDESS_TITLE
 from database import store
 from game_text import handle_text
-from menus import hub_kb, hub_text, send_hub
+from menus import hub_payload, send_hub
 from players import refresh_titles
 from registration import reg_prompt, start_registration
 from ui import btn, kb, panel, say
@@ -86,9 +86,10 @@ async def on_start(m: Message, command: CommandObject):
             await reg_prompt(m)
         return
     if doc.get("registered"):
+        text, markup = await hub_payload(doc)
         await m.answer(
-            f"💅 <i>«اوه… <b>{esc(m.from_user.first_name)}</b> برگشته. فکر می‌کردم بالاخره مُردی و از دستت راحت شدم.»</i>\n\n" + hub_text(doc),
-            reply_markup=hub_kb(m.from_user.id),
+            f"💅 <i>«اوه… <b>{esc(m.from_user.first_name)}</b> برگشته. فکر می‌کردم بالاخره مُردی و از دستت راحت شدم.»</i>\n\n" + text,
+            reply_markup=markup,
         )
         return
     await m.answer(panel("purple", "🌌", f"دروازه‌ی آخرِ ایسکا باز شد", [

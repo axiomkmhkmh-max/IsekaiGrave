@@ -66,6 +66,9 @@ async def quest_progress(m, kind: str, n: int = 1, uid: Optional[int] = None):
         await m.reply(panel("green", "🎯", f"ماموریت انجام شد — {name}", lines,
                             "💅 <i>«ماموریتتو انجام دادی؟ …باشه، قبول. دفعه‌ی بعد سریع‌تر؛ من وقت ندارم.»</i>"),
                       reply_markup=kb([btn("📜 ماموریت‌های من", f"m:quest:{uid}", "blue")]))
+    if kind in ("trip", "npc"):                  # 🎓 تورِ شروع: اولین ماجراجویی / اولین حرف زدن با NPC
+        from guide import tut_mark
+        await tut_mark(m, "explore" if kind == "trip" else "npc", uid)
 
 
 async def do_quests(m):
@@ -82,3 +85,5 @@ async def do_quests(m):
     foot = "🎉 همه‌ی ماموریت‌های امروز رو انجام دادی! آفرین، فردا دوباره بیا. 🙂" if alld else "💅 <i>«ماموریت‌هات رو تموم کن. هر ماموریتِ نیمه‌کاره توهین به منه.»</i>"
     await m.reply(panel("blue", "📜", "دفتر ماموریت‌ها", lines, foot),
                   reply_markup=kb([btn("🌍 ماجراجویی", f"m:go:{uid}", "green"), btn("🌙 منو", f"m:main:{uid}", "blue")]))
+    from guide import tut_mark                   # 🎓 تورِ شروع: دیدنِ دفتر ماموریت‌ها
+    await tut_mark(m, "quest")
