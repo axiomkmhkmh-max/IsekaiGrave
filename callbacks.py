@@ -5,7 +5,7 @@ from aiogram.types import CallbackQuery, Message
 
 from arena import arena_cb
 from battle import battle_cb
-from admin import admin_clean, admin_health, ADMIN_HELP, admin_stats, is_admin
+from admin import is_admin
 from content import BIOMES, BOONS, CLASSES, NPCS, TERRITORIES
 from database import store
 from death import do_self_death
@@ -83,15 +83,8 @@ async def handle_cb(cq: CallbackQuery, bot: Bot):
             await cq.answer("این بخش فقط برای ادمین‌هاست. 🚫", show_alert=True)
             return
         await cq.answer()
-        act = parts[1]
-        if act == "stats":
-            await m.reply(await admin_stats())
-        elif act == "health":
-            await m.reply(await admin_health())
-        elif act == "clean":
-            await m.reply(await admin_clean())
-        elif act == "help":
-            await m.reply(panel("red", "🛠", "فرمان‌های ادمین", ADMIN_HELP))
+        from admin_tools import admin_cb            # پنل چندلایه‌ی ادمین (دسته‌ها، گزارش‌ها)
+        await admin_cb(cq, m, parts, bot)
         return
 
     # ── ثبت‌نام

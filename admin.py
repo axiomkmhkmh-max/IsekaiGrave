@@ -14,6 +14,7 @@ from intents import (
     ADMIN_BAN_RE, ADMIN_BROADCAST_RE, ADMIN_CLEAN_RE, ADMIN_HEALTH_RE, ADMIN_KILL_RE,
     ADMIN_PANEL_RE, ADMIN_STATS_RE, ADMIN_UNBAN_RE,
 )
+from admin_tools import HELP_LINES, admin_kb, handle_ext, home_text
 from players import reincarnate
 from render import render_rebirth
 from ui import btn, kb, panel
@@ -25,22 +26,8 @@ def is_admin(uid: int) -> bool:
     return uid in ADMIN_IDS
 
 
-def admin_kb(uid: int) -> InlineKeyboardMarkup:
-    return kb(
-        [btn("📊 آمار ربات", f"adm:stats:{uid}", "blue"), btn("🩺 سلامت سرور", f"adm:health:{uid}", "green")],
-        [btn("🧹 پاکسازی دیتابیس", f"adm:clean:{uid}", "red"), btn("📖 دستورها", f"adm:help:{uid}", "blue")],
-    )
-
-
-ADMIN_HELP = [
-    "فرمان‌های ادمین (متنی):",
-    "• <b>آمار ربات</b> ← آمار کلی",
-    "• <b>سلامت سرور</b> ← وضعیت MongoDB و آپتایم",
-    "• <b>پاکسازی</b> ← حذف رکوردهای منقضی",
-    "• <b>بن [user_id]</b> / <b>آنبن [user_id]</b> (یا ریپلای + «بن»)",
-    "• <b>کشتن [user_id]</b> ← ارسال اجباری به ایسکا",
-    "• <b>سراسری [متن]</b> ← پیام همگانی به همه‌ی کاربران و گروه‌ها",
-]
+# پنل چندلایه و دستورهای گسترده تو admin_tools.py ـن؛ ADMIN_HELP همون راهنمای کاملشه.
+ADMIN_HELP = HELP_LINES
 
 
 async def admin_stats() -> str:
@@ -134,7 +121,7 @@ async def handle_admin_commands(m: Message, bot: Bot, c: str) -> bool:
     if not is_admin(uid):
         return False
     if ADMIN_PANEL_RE.fullmatch(c):
-        await m.reply(panel("red", "🛠", "پنل مدیریت ادمین", ADMIN_HELP), reply_markup=admin_kb(uid))
+        await m.reply(home_text(), reply_markup=admin_kb(uid))
         return True
     if ADMIN_STATS_RE.fullmatch(c):
         await m.reply(await admin_stats())
@@ -172,4 +159,4 @@ async def handle_admin_commands(m: Message, bot: Bot, c: str) -> bool:
         await m.reply("⏳ پیام همگانی تو صف ارسال قرار گرفت…")
         spawn(broadcast(bot, m.chat.id, bcm.group(1)))
         return True
-    return False
+    return await handle_ext(m, bot, c)
