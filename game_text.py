@@ -27,6 +27,7 @@ from guilds import (
 )
 import reply_games
 import skirmish
+from cmdhelp import CMDS_RE, do_commands
 from intents import (
     ACCEPT_RE, BLESS_RE, BOARD_RE, BOSS_CALL_RE, BOSS_HIT_RE, BOSS_STATUS_RE, BUY_RE, CAFE_RE,
     CHURCH_RE, CURSE_RE, DEATH_RE, DEFUSE_RE, DISTRESS_RE, DIVORCE_RE, DUEL_RE, EXEC_RE, GUILD_CREATE_RE,
@@ -92,6 +93,9 @@ async def handle_text(m: Message, bot: Bot):
     if me_doc and me_doc.get("banned"):
         return
     if await handle_admin_commands(m, bot, c):
+        return
+    if CMDS_RE.fullmatch(c):                      # 📚 «دستورات»: پنلِ همه‌ی دستورها (برای ثبت‌نام‌نشده‌ها هم)
+        await do_commands(m)
         return
     registered = bool(me_doc and me_doc.get("registered"))
 

@@ -69,6 +69,12 @@ async def handle_cb(cq: CallbackQuery, bot: Bot):
             await cq.answer()
         return
 
+    # 📚 پنلِ «دستورات»
+    if kind == "hc":
+        from cmdhelp import cmds_cb
+        await cmds_cb(cq, parts)
+        return
+
     # 🎭 باشگاهِ ریپلای (تاس، هفت‌تیر، بلوف): خودش جواب کلیک رو می‌ده
     if kind == "rg":
         if registered:

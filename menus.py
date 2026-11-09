@@ -86,4 +86,4 @@ async def send_hub(m, doc: Optional[dict] = None):
 
 # ───────────────────────────── 🎛 هندلر دکمه‌ها ─────────────────────────────
 def help_kb(uid: int) -> InlineKeyboardMarkup:
-    return kb(back_kb(uid))
+    return kb([btn("📚 همه‌ی دستورها", f"hc:main:{uid}", "green")], back_kb(uid))
