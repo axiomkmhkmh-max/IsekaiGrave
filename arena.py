@@ -472,6 +472,11 @@ async def _commit(cq, bot: Bot, kind: str, st: str, aid: int, tid: int, risky: b
         if len(cb_prev) == 2 and cb_prev[0] != cb_prev[1]:
             lines.append(f"🎼 مهاجم تو کامبوئه ({' → '.join(ATT[c][0] for c in cb_prev)} → ؟)؛ ژستِ سومِ متفاوت = +{COMBO_SOULS}🕯 برای مهاجم. جدیه یا بلوف؟ 🤔")
         lines.append(combo_text(tdoc.get("sk_cbd"), tdoc.get("sk_cbd_t"), DEF, DEF_BASE, now, "🏰 دیوارِ سه‌لایه"))
+        try:
+            import reply_games
+            lines += reply_games.defense_panel_lines(adoc, tdoc, now)       # 🎯 نشانِ شکار و 🩸 زخمِ مدافع
+        except Exception:
+            log.exception("rg defense lines failed")
     await store.clashes.update_one({"_id": oid}, {"$set": {"dspec": dspecial}})
     try:
         await cq.message.edit_text(

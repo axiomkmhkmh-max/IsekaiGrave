@@ -13,6 +13,13 @@
 • 🎖 تسلطِ ژست: هر برد با یه ژست پیشرفتش رو بالا می‌بره؛ سطح ۲ = +۱ RP، سطح ۳ = +۱🕯 با اون ژست، سطح ۴ = لقب.
 • 🎁 صندوقِ باشگاه: ۳/۷/۱۲ برخوردِ ریپلایی در روز (حمله، تمرین و بازی‌ها) = صندوقِ شانسی + روزهای پشت‌سرهم.
 
+v3.8 (بازی‌های جدید + اعتیادِ چت):
+• 💣 بمب      — «بمب بازی [مبلغ]»: بمبِ فیتیله‌مخفی دست‌به‌دست میشه؛ «پاس بده» یا «✂️ خنثی کن» (ریسکی). تو دستِ هر کی بترکه می‌بازه.
+• 🃏 بیست‌ویک — «بیست و یک [مبلغ]»: نوبتی «کارت» یا «بس»؛ نزدیک‌تر به ۲۱ برنده‌ست، رد شدن = سوختن.
+• 🌍 چالشِ باز — «تاس باز»، «بمب بازی باز 30»، …: بدونِ ریپلای؛ هر کی تو گپ قبول کنه حریفه (نفر‌به‌نفر، بدونِ گیلد).
+• 💰 دو برابر یا هیچ + 📊 سریِ امروز + 🎁 «فقط ۱ برخورد تا صندوق» + ⛓ شکستنِ زنجیره‌ی بردِ باشگاه (XP).
+• 🎯 نشانِ شکار (عمقِ حمله): هر بار حرکتِ حریف رو بخونی یه نشان روش می‌زنی؛ ۳ نشانِ تازه = برخوردِ بعدی +۱🕯.
+
 امنیت: انتقالِ GS با «امانتِ تک‌سندی» روی خودِ کاربر (کم‌کردن + مارکر، پرداخت + حذفِ مارکر تو یک آپدیت)؛ پس پرداخت دقیقاً
 یک‌بار انجام میشه و بعد از ری‌استارت هر بازیِ نیمه‌کاره با بازگشتِ کاملِ پول بسته میشه. سقفِ شرط، سقفِ سودِ روزانه و سقفِ
 تعدادِ شرط با یه جفت ثابتن؛ ۵٪ از پات می‌سوزه. محافظت (opted_out) مطلقه.
@@ -51,6 +58,11 @@ DRAW_MIN_DELAY, DRAW_MAX_DELAY, DRAW_WINDOW = 2.2, 5.8, 12
 BLUFF_WIN, BLUFF_MAX_ROUNDS = 2, 6
 DICE_SET = [("🎲", 6), ("🎯", 6), ("🎳", 6), ("🏀", 5), ("⚽", 5)]
 DICE_REROLLS = 2
+OPEN_WAIT = 120                 # مهلتِ چالشِ باز (هر کی قبول کنه حریفه)
+BOMB_MIN, BOMB_MAX, BOMB_IDLE = 4, 9, 16
+BJ_TARGET, BJ_IDLE = 21, 40
+MARK_NEED, MARK_TTL, MARK_FRESH = 3, 3 * 3600, 3 * 3600      # 🎯 نشانِ شکار: ۳ نشانِ تازه (تا ۳ ساعت)
+STREAK_BREAK_MIN, STREAK_BREAK_XP = 3, 8                      # ⛓ شکستنِ زنجیره‌ی بردِ باشگاه (XP هر بُردِ زنجیره، سقفِ ۴۰)
 
 HYPE_DECAY = 300                # هر ۳۰۰ ثانیه ۱ واحد خنک میشه
 HYPE_TIERS = [(75, 3, "☄️", "شعله‌ور"), (45, 2, "🔥", "داغ"), (20, 1, "🌡", "گرم")]
@@ -69,16 +81,31 @@ MAST_TITLE = {
 CHEST = {3: ((10, 30), 15), 7: ((20, 60), 30), 12: ((35, 100), 50)}      # آستانه → ((بازه‌ی GS)، XP)
 JACKPOT_P = 0.05
 
-KINDS = {"d": ("🎲", "تاس"), "q": ("🔫", "هفت‌تیر"), "b": ("🎭", "بلوف")}
+KINDS = {"d": ("🎲", "تاس"), "q": ("🔫", "هفت‌تیر"), "b": ("🎭", "بلوف"), "m": ("💣", "بمب"), "j": ("🃏", "بیست‌ویک")}
 _DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
 
 _AMT = r"(?: (\d{1,3}))?(?: gs| جی اس)?"
 DICE_RE = re.compile(r"(?:تاس|تاس بریزیم|تاس بندازیم)" + _AMT)
 DRAW_RE = re.compile(r"(?:هفت ?تیر|تیراندازی|دوئل سریع)" + _AMT)
 BLUFF_RE = re.compile(r"(?:بازی بلوف|بلوف بازی|بازی دروغگو)" + _AMT)
+BOMB_RE = re.compile(r"(?:بمب بازی|بازی بمب|بمب دست ?به ?دست|سیب ?زمینی داغ)" + _AMT)
+BJ_RE = re.compile(r"(?:بیست ?و ?یک|بازی بیست ?و ?یک|بلک ?جک)" + _AMT)
+OPEN_RE = re.compile(r"(تاس|هفت ?تیر|بازی بلوف|بمب بازی|بازی بمب|بیست ?و ?یک|بلک ?جک) (?:باز|همگانی|آزاد)" + _AMT)
 CLUB_RE = re.compile(r"(?:باشگاه|باشگاه ریپلای|باشگاه ریپلایی|کلاب)")
 FAST_RE = re.compile(r"(?:سریع ?ترین ها|سریع ?ترین دست ها|رکورد واکنش)")
-_NEEDS_REPLY = (DICE_RE, DRAW_RE, BLUFF_RE)
+_NEEDS_REPLY = (DICE_RE, DRAW_RE, BLUFF_RE, BOMB_RE, BJ_RE)
+_BY_KIND = (("d", DICE_RE), ("q", DRAW_RE), ("b", BLUFF_RE), ("m", BOMB_RE), ("j", BJ_RE))
+_HOW = {
+    "d": "ربات یه تاس/دارت/توپِ واقعی برای هر دو می‌ندازه؛ بالاتر برنده‌ست.",
+    "q": "«آماده…» میاد؛ تا «شلیک!» دستت رو نگه دار! زودتر بزنی فالت میشی. سریع‌ترین برنده‌ست.",
+    "b": "یه عدد مخفی انتخاب می‌کنی و یه عدد «می‌گی»؛ حریف باید باور کنه یا بگه دروغگو. اولین ۲ امتیاز می‌بره.",
+    "m": "یه بمبِ فیتیله‌مخفی دست‌به‌دست میشه؛ هر نوبت «پاس بده» یا «✂️ خنثی کن» (ریسکی). تو دستِ هر کی بترکه می‌بازه!",
+    "j": "هر نفر دو کارت داره؛ نوبتی «کارت» بکش یا «بس» بگو. نزدیک‌تر به ۲۱ برنده‌ست و رد شدن از ۲۱ = سوختن!",
+}
+
+
+def _open_kind(name: str) -> Optional[str]:
+    return next((k for k, rx in _BY_KIND if rx.fullmatch(name)), None)
 
 
 def _n(raw: str) -> str:
@@ -87,7 +114,7 @@ def _n(raw: str) -> str:
 
 def matches(raw: str, has_reply: bool = True) -> bool:
     t = _n(raw)
-    if CLUB_RE.fullmatch(t) or FAST_RE.fullmatch(t):
+    if CLUB_RE.fullmatch(t) or FAST_RE.fullmatch(t) or OPEN_RE.fullmatch(t):
         return True
     return has_reply and any(r.fullmatch(t) for r in _NEEDS_REPLY)
 
@@ -155,14 +182,76 @@ def wounded(doc: Optional[dict], now: Optional[float] = None) -> bool:
     return float((doc or {}).get("rg_wound_until", 0) or 0) > (now or time.time())
 
 
+# ───────────────────────────── 🎯 نشانِ شکار ─────────────────────────────
+def marks_of(doc: Optional[dict], opp, now: Optional[float] = None) -> int:
+    """تعدادِ نشانِ «تازه»ای که صاحبِ doc روی حریفِ opp داره (۰..MARK_NEED)."""
+    v = ((doc or {}).get("rg_marks") or {}).get(str(opp))
+    try:
+        if not v or len(v) < 2 or (now or time.time()) - float(v[1]) > MARK_TTL:
+            return 0
+        return max(0, min(MARK_NEED, int(v[0])))
+    except (TypeError, ValueError):
+        return 0
+
+
+async def mark_add(uid: int, opp: int) -> int:
+    """یه نشان روی حریف می‌زنه (نشانِ کهنه‌ها پاک میشن)؛ تعدادِ جدید رو برمی‌گردونه."""
+    try:
+        now = time.time()
+        doc = await store.users.find_one({"user_id": uid}, {"rg_marks": 1}) or {}
+        mk = doc.get("rg_marks") or {}
+        n = min(MARK_NEED, marks_of(doc, opp, now) + 1)
+        upd: dict = {"$set": {f"rg_marks.{opp}": [n, now]}}
+        stale = {f"rg_marks.{k}": "" for k, v in mk.items() if k != str(opp) and marks_of(doc, k, now) == 0}
+        if stale:
+            upd["$unset"] = stale
+        await store.users.update_one({"user_id": uid}, upd)
+        return n
+    except Exception:
+        log.exception("mark_add failed")
+        return 0
+
+
+async def mark_clear(uid: int, opp: int):
+    try:
+        await store.users.update_one({"user_id": uid}, {"$unset": {f"rg_marks.{opp}": ""}})
+    except Exception:
+        log.exception("mark_clear failed")
+
+
+def _mark_bar(n: int) -> str:
+    return "🎯" * n + "▫️" * (MARK_NEED - n)
+
+
 def attack_panel_lines(adoc: dict, tdoc: dict, now: Optional[float] = None) -> list:
-    """خط‌هایی که پنلِ انتخابِ ژستِ حمله اضافه می‌کنه (تب، زخم‌ها)."""
+    """خط‌هایی که پنلِ انتخابِ ژستِ حمله اضافه می‌کنه (تب، زخم‌ها، نشان‌های شکار)."""
     now = now or time.time()
     out = [hype_line(adoc)]
+    mk = marks_of(adoc, tdoc.get("user_id"), now)
+    if mk:
+        out.append(f"🎯 نشانِ شکار روی {_nm(tdoc)}: {_mark_bar(mk)}" + (" — پُره! این برخورد +۱🕯 داری" if mk >= MARK_NEED else f" ({mk}/{MARK_NEED}؛ یه خوندنِ دیگه…)"))
+    mk2 = marks_of(tdoc, adoc.get("user_id"), now)
+    if mk2:
+        out.append(f"⚠️ {_nm(tdoc)} روی تو {mk2}/{MARK_NEED} نشان داره" + (" — پُره؛ این برخورد +۱🕯 برای اونه!" if mk2 >= MARK_NEED else "؛ ژست‌هات رو عوض کن!"))
     if wounded(adoc, now):
         out.append("🩸 تو زخمی‌ای: تو این برخورد −۱🕯 داری. یه دوست «ترمیم» کنه پاک میشه!")
     if wounded(tdoc, now):
         out.append(f"🩸 {_nm(tdoc)} زخمیه: −۱🕯 برای اون؛ فرصتِ خوبیه! 😈")
+    return out
+
+
+def defense_panel_lines(adoc: dict, tdoc: dict, now: Optional[float] = None) -> list:
+    """خط‌های اضافه‌ی پنلِ دفاع (از دیدِ مدافع tdoc)."""
+    now = now or time.time()
+    out = []
+    mk = marks_of(tdoc, adoc.get("user_id"), now)
+    if mk:
+        out.append(f"🎯 تو روی {_nm(adoc)} {_mark_bar(mk)}" + (" داری — پُره: +۱🕯 تو این برخورد!" if mk >= MARK_NEED else f" نشان داری ({mk}/{MARK_NEED})."))
+    mk2 = marks_of(adoc, tdoc.get("user_id"), now)
+    if mk2:
+        out.append(f"⚠️ {_nm(adoc)} روی تو {mk2}/{MARK_NEED} نشان داره" + (" — پُره؛ +۱🕯 برای اونه!" if mk2 >= MARK_NEED else "."))
+    if wounded(tdoc, now):
+        out.append("🩸 تو زخمی‌ای: تو این برخورد −۱🕯 داری.")
     return out
 
 
@@ -173,8 +262,12 @@ async def pre_fight(adoc: dict, tdoc: dict, st: str, dfn: str, auto: bool, fa: d
         return notes
     try:
         now = time.time()
-        for d, f, pose, is_def in ((adoc, fa, st, False), (tdoc, fb, dfn, True)):
+        for d, f, pose, is_def, opp in ((adoc, fa, st, False, tdoc["user_id"]), (tdoc, fb, dfn, True, adoc["user_id"])):
             up, down, nm = 0, 0, _nm(d)
+            if marks_of(d, opp, now) >= MARK_NEED:
+                up += 1
+                notes.append(f"🎯 نشانِ شکارِ <b>{nm}</b> پُر بود: +۱🕯")
+                await mark_clear(d["user_id"], opp)
             if hype_tier(hype_now(d, now))[0] >= 3:
                 up += 1
                 notes.append(f"☄️ تبِ <b>{nm}</b> شعله‌ور: +۱🕯")
@@ -224,6 +317,13 @@ async def post_fight(adoc: dict, tdoc: dict, st: str, dfn: str, win: bool, res: 
                     await arena.renown(wid, 1)
                 except Exception:
                     log.exception("rg mastery rp failed")
+        # 🎯 نشانِ شکار: کسی که حرکتِ حریف رو «خونده» (و دفاعِ خودکار نبوده) یه نشان می‌زنه
+        if not auto and res != 0:
+            reader, victim, rname = (aid, tid, an) if res > 0 else (tid, aid, dn)
+            n = await mark_add(reader, victim)
+            if n:
+                lines.append(f"🎯 <b>{rname}</b> حرکتِ حریف رو خوند و نشان زد {_mark_bar(n)}"
+                             + (" — پُر شد! برخوردِ بعدیشون +۱🕯 برای اونه." if n >= MARK_NEED else ""))
         # 🌡 XPِ تب (هر دو طرف)
         bonus = []
         for d, nm in ((adoc, an), (tdoc, dn)):
@@ -293,19 +393,20 @@ async def club_bump(bot: Bot, chat_id: int, uid: int) -> int:
     return n
 
 
-async def _stat(uid: int, kind: str, res: str):
-    """res: w/l/d؛ زنجیره‌ی بردِ باشگاه رو هم نگه می‌داره."""
+async def _stat(uid: int, kind: str, res: str) -> tuple:
+    """res: w/l/d؛ زنجیره‌ی بردِ باشگاه رو هم نگه می‌داره. خروجی = (زنجیره‌ی فعلی بعد از برد، زنجیره‌ای که با این باخت شکست)."""
     upd: dict = {"$inc": {f"rg_st.{kind}.{res}": 1}}
     if res == "w":
         upd["$inc"]["rg_ws"] = 1
     elif res == "l":
         upd["$set"] = {"rg_ws": 0}
-    doc = await store.users.find_one_and_update({"user_id": uid}, upd, return_document=ReturnDocument.AFTER)
+    doc = await store.users.find_one_and_update({"user_id": uid}, upd, return_document=ReturnDocument.BEFORE)
+    prev = int((doc or {}).get("rg_ws", 0) or 0)
     if res == "w" and doc:
-        ws = int(doc.get("rg_ws", 0))
+        ws = prev + 1
         await store.users.update_one({"user_id": uid, "rg_ws_best": {"$not": {"$gte": ws}}}, {"$set": {"rg_ws_best": ws}})
-        return ws
-    return 0
+        return ws, 0
+    return 0, (prev if res == "l" else 0)
 
 
 _WS_BANNER = {3: "🔥 سه بردِ پشت‌سرهم!", 5: "💀 پنج‌تایی! کسی جلوداره نیست!", 8: "👑 هشت‌تایی؛ افسانه‌ی باشگاه!"}
@@ -398,9 +499,14 @@ def _pair_kb(g: dict):
 
 
 def _rematch_kb(g: dict):
-    # دکمه‌ی ریمچ: هر کی بزنه، چالش‌دهنده‌ی جدیده و طرفِ مقابل رو صدا می‌زنه
-    return kb([btn("🔁 ریمچ", f"rg:rm:{g['kind']}:{g['a']}:{g['t']}:{g.get('stake', 0)}", "green"),
-               btn("🎭 باشگاه", "rg:ci", "blue")])
+    # دکمه‌ی ریمچ: هر کی بزنه، چالش‌دهنده‌ی جدیده و طرفِ مقابل رو صدا می‌زنه. «دو برابر یا هیچ» / «شرطی» هم کنارشه.
+    k, a, t, stake = g["kind"], g["a"], g["t"], int(g.get("stake", 0))
+    row = [btn("🔁 ریمچ", f"rg:rm:{k}:{a}:{t}:{stake}", "green")]
+    if stake > 0 and stake * 2 <= MAX_STAKE:
+        row.append(btn(f"💰 دو برابر ({stake * 2})", f"rg:rm:{k}:{a}:{t}:{stake * 2}", "red"))
+    elif stake == 0:
+        row.append(btn("🪙 شرطی (۱۰)", f"rg:rm:{k}:{a}:{t}:10", "red"))
+    return kb(row, [btn("🎭 باشگاه", "rg:ci", "blue")])
 
 
 def _stake_line(stake: int) -> str:
@@ -409,47 +515,92 @@ def _stake_line(stake: int) -> str:
     return f"🪙 شرط: <b>{stake}</b> {GS} از هر نفر · برنده {stake * 2 - max(1, stake * 2 * FEE_PCT // 100)} {GS} می‌گیره (کارمزد {FEE_PCT}٪ می‌سوزه)"
 
 
+_TAUNTS = [
+    "💅 «{w} بُرد. {l} هم مثلِ همیشه…»",
+    "😈 {l}، فکر کردی راحته؟ {w} فقط گرم شد!",
+    "🪦 ایزدبانو یه خطِ دیگه تو دفترِ شکستِ {l} نوشت.",
+    "🥱 {w} حتی عرق هم نکرد؛ {l} ریمچ می‌خوای؟",
+    "👑 امروز نوبتِ {w} بود. فردا؟ شاید نوبتِ {l}… شاید.",
+    "🍿 تماشاچی‌ها: «{l} رو دیدی؟!» · «آره، دیدم… و حیف شد!»",
+]
+
+
+async def _series_line(g: dict, ad: dict, td: dict) -> Optional[str]:
+    """📊 سریِ امروزِ دو نفر (همه‌ی بازی‌های باشگاه)؛ رقابتِ دوطرفه رو داغ نگه می‌داره."""
+    try:
+        a, t = g["a"], g["t"]
+        flt = {"uids": {"$all": [a, t]}, "day": g.get("day"), "status": "done"}
+        wa = await store.rgames.count_documents({**flt, "winner": a})
+        wt = await store.rgames.count_documents({**flt, "winner": t})
+        if wa + wt < 2:
+            return None
+        line = f"📊 امروز بینتون: {_nm(ad)} <b>{wa}</b> – <b>{wt}</b> {_nm(td)}"
+        if abs(wa - wt) >= 2:
+            line += f"\n😤 {_nm(ad if wa < wt else td)} عقبه؛ ریمچ بزن و جبران کن!"
+        elif wa + wt >= 4:
+            line += " · 🔥 رقابتِ داغ!"
+        return line
+    except Exception:
+        log.exception("rg series failed")
+        return None
+
+
 async def _post(bot: Bot, g: dict):
-    """بعد از پرداخت: آمار، تب، صندوق و پنلِ نتیجه."""
+    """بعد از پرداخت: آمار، تب، صندوق، سریِ امروز و پنلِ نتیجه."""
     kind, a, t, w = g["kind"], g["a"], g["t"], g.get("winner")
     ad, td = await store.get(a), await store.get(t)
-    banners = []
+    banners, near = [], []
     for uid, d in ((a, ad), (t, td)):
         res = "d" if w is None else "w" if uid == w else "l"
-        ws = await _stat(uid, kind, res)
+        ws, lost_ws = await _stat(uid, kind, res)
         if res == "w" and ws in _WS_BANNER:
             banners.append(f"{_WS_BANNER[ws]} — {display(d)}")
+        if res == "l" and lost_ws >= STREAK_BREAK_MIN and w is not None:      # ⛓ زنجیره‌ی بردِ بازنده شکست
+            xp = min(40, STREAK_BREAK_XP * lost_ws)
+            await grant(w, xp=xp)
+            banners.append(f"⛓ {display(ad if w == a else td)} زنجیره‌ی {lost_ws}تاییِ {display(d)} رو شکست! ⭐ +{xp} XP")
         await hype_add(uid, 14 if res == "w" else 9 if res == "l" else 5)
         n_today = await club_bump(bot, g["chat_id"], uid)
         if 0 < n_today <= max(CHEST):                       # XPِ بازی فقط برای ۱۲ بازیِ اولِ روز (ضدِ فارم)
             await grant(uid, xp=8 if res == "w" else 4)
+        nxt = next((th for th in sorted(CHEST) if th > n_today), None)
+        if nxt and nxt - n_today == 1:
+            near.append(f"🎁 {_nm(d)}: فقط ۱ برخورد تا صندوقِ {nxt}تایی!")
     lines = list(g.get("res_lines") or [])
     stake = int(g.get("stake", 0))
     if w is not None:
-        lines.append(f"🏆 برنده: {display(ad if w == a else td, link=True)}")
+        wd, ld = (ad, td) if w == a else (td, ad)
+        lines.append(f"🏆 برنده: {display(wd, link=True)}")
         if stake > 0:
             win_amt = stake * 2 - max(1, stake * 2 * FEE_PCT // 100)
             lines.append(f"🪙 +{win_amt} {GS} (سودِ خالص {win_amt - stake})")
+        lines.append(random.choice(_TAUNTS).format(w=_nm(wd), l=_nm(ld)))
     else:
         lines.append("🤝 مساوی/لغو — شرط‌ها برگشت.")
-    lines += banners
+    sl = await _series_line(g, ad, td)
+    if sl:
+        lines.append(sl)
+    lines += banners + near
     ic, nm = KINDS[kind]
     await _edit(bot, g, panel("purple", ic, f"{nm} — نتیجه", lines), _rematch_kb(g))
 
 
 # ───────────────────────────── 🚪 شروعِ چالش ─────────────────────────────
-async def _busy(*uids) -> bool:
-    return bool(await store.rgames.find_one({"uids": {"$in": list(uids)}, "status": {"$in": ["wait", "live", "settling"]}}))
+async def _busy(*uids, ignore=None) -> bool:
+    flt: dict = {"uids": {"$in": list(uids)}, "status": {"$in": ["wait", "live", "settling"]}}
+    if ignore is not None:
+        flt["_id"] = {"$ne": ignore}
+    return bool(await store.rgames.find_one(flt))
 
 
-async def _precheck(adoc: dict, tdoc: dict, stake: int) -> Optional[str]:
+async def _precheck(adoc: dict, tdoc: dict, stake: int, ignore=None) -> Optional[str]:
     if adoc.get("opted_out"):
         return "خودت «محافظت» رو فعال کردی؛ اول بنویس «برگردم به بازی». 🛡"
     if tdoc.get("opted_out"):
         return f"{display(tdoc)} «محافظت» فعال کرده؛ بهش نمیشه چالش داد. 🛡"
     if tdoc.get("registered") is False:
         return f"{display(tdoc)} هنوز قرارداد امضا نکرده. 📜"
-    if await _busy(adoc["user_id"], tdoc["user_id"]):
+    if await _busy(adoc["user_id"], tdoc["user_id"], ignore=ignore):
         return "یکی از شما هنوز تو یه بازیِ باشگاهه؛ اول اون تموم بشه. ⏳"
     if stake > 0:
         if stake > MAX_STAKE:
@@ -477,9 +628,7 @@ async def _open(m, bot: Bot, kind: str, adoc: dict, tdoc: dict, stake: int):
         return await say(m, err, KINDS[kind][0], KINDS[kind][1], "orange")
     ic, nm = KINDS[kind]
     aid, tid = adoc["user_id"], tdoc["user_id"]
-    how = {"d": "ربات یه تاس/دارت/توپِ واقعی برای هر دو می‌ندازه؛ بالاتر برنده‌ست.",
-           "q": "«آماده…» میاد؛ تا «شلیک!» دستت رو نگه دار! زودتر بزنی فالت میشی. سریع‌ترین برنده‌ست.",
-           "b": "یه عدد مخفی انتخاب می‌کنی و یه عدد «می‌گی»؛ حریف باید باور کنه یا بگه دروغگو. اولین ۲ امتیاز می‌بره."}[kind]
+    how = _HOW[kind]
     g = {"kind": kind, "chat_id": m.chat.id, "a": aid, "t": tid, "uids": [aid, tid], "stake": stake, "status": "wait",
          "created_at": utcnow(), "day": day_key(), "upd": time.time()}
     res = await store.rgames.insert_one(g)
@@ -493,12 +642,52 @@ async def _open(m, bot: Bot, kind: str, adoc: dict, tdoc: dict, stake: int):
     spawn(_expire_wait(bot, g["_id"], WAIT_SECS))
 
 
+async def _precheck_open(adoc: dict, stake: int) -> Optional[str]:
+    """چکِ سازنده‌ی چالشِ باز (حریف هنوز مشخص نیست؛ چکِ کاملِ جفت موقعِ قبول انجام میشه)."""
+    if adoc.get("opted_out"):
+        return "خودت «محافظت» رو فعال کردی؛ اول بنویس «برگردم به بازی». 🛡"
+    if await _busy(adoc["user_id"]):
+        return "تو هنوز تو یه بازیِ باشگاهی؛ اول اون تموم بشه. ⏳"
+    if stake > 0:
+        if stake > MAX_STAKE:
+            return f"سقفِ شرط {MAX_STAKE} {GS} ـه. 🪙"
+        if int(adoc.get("level", 1)) < STAKE_MIN_LEVEL:
+            return f"شرطی بازی کردن از سطح {STAKE_MIN_LEVEL} باز میشه؛ فعلاً دوستانه بازی کن. 🐣"
+        if int(adoc.get("gold", 0)) < stake:
+            return f"موجودیت واسه شرطِ {stake} {GS} کافی نیست. 🪙"
+        if adoc.get("rg_prof_day") == day_key() and int(adoc.get("rg_prof", 0)) >= DAILY_PROFIT_CAP:
+            return f"امروز به سقفِ سودِ باشگاه ({DAILY_PROFIT_CAP} {GS}) رسیدی؛ دوستانه بازی کن. 🌙"
+    return None
+
+
+async def _open_public(m, bot: Bot, kind: str, adoc: dict, stake: int):
+    """🌍 چالشِ باز: بدونِ ریپلای؛ اولین نفری که قبول کنه (غیر از خودت) حریفه. نفر‌به‌نفره‌ست، گروهی نیست."""
+    ic, nm = KINDS[kind]
+    err = await _precheck_open(adoc, stake)
+    if err:
+        return await say(m, err, ic, nm, "orange")
+    aid = adoc["user_id"]
+    g = {"kind": kind, "chat_id": m.chat.id, "a": aid, "t": None, "uids": [aid], "stake": stake, "status": "wait", "open": True,
+         "created_at": utcnow(), "day": day_key(), "upd": time.time()}
+    res = await store.rgames.insert_one(g)
+    g["_id"] = res.inserted_id
+    msg = await m.reply(panel("purple", ic, f"🌍 چالشِ باز — {nm}", [
+        f"{display(adoc, link=True)} یه چالشِ <b>{nm}</b> باز گذاشت! کی جرئتِ روبه‌رو شدن داره؟ 😏",
+        _HOW[kind], _stake_line(stake),
+        f"⏳ {OPEN_WAIT} ثانیه وقت هست؛ اولین نفرِ قبول‌کننده حریفه.",
+    ]), reply_markup=kb([btn("⚔️ قبول می‌کنم", f"rg:ac:{g['_id']}", "green"), btn("🙅 پس‌گرفتن", f"rg:no:{g['_id']}", "red")]))
+    await store.rgames.update_one({"_id": g["_id"]}, {"$set": {"msg_id": msg.message_id}})
+    spawn(_expire_wait(bot, g["_id"], OPEN_WAIT))
+
+
 async def _expire_wait(bot: Bot, gid, delay: float):
     try:
         await asyncio.sleep(delay)
         g = await _claim(gid, "wait", "expired")
         if g:
-            await _edit(bot, g, panel("black", KINDS[g["kind"]][0], "چالش منقضی شد", [f"{_nm(await store.get(g['t']))} جواب نداد. 💤"]))
+            who = await store.get(g["t"]) if g.get("t") else None
+            await _edit(bot, g, panel("black", KINDS[g["kind"]][0], "چالش منقضی شد",
+                                      [f"{_nm(who)} جواب نداد. 💤" if who else "هیچ‌کس جرئتِ قبول کردن نداشت! 🐔"]))
     except Exception:
         log.exception("rg expire_wait failed")
 
@@ -508,11 +697,37 @@ async def _accept(cq, bot: Bot, gid: ObjectId, uid: int):
     g = await store.rgames.find_one({"_id": gid})
     if not g or g["status"] != "wait":
         return await cq.answer("این چالش دیگه فعال نیست. ⌛", show_alert=True)
+    if g.get("t") is None:                                   # 🌍 چالشِ باز
+        return await _accept_open(cq, bot, g, uid)
     if uid != g["t"]:
         return await cq.answer("این چالش مالِ تو نیست؛ خودت یکی بساز! 😉", show_alert=True)
     g = await _claim(gid, "wait", "holding")
     if not g:
         return await cq.answer("دیر شد! ⌛", show_alert=True)
+    await _go_live(cq, bot, g)
+
+
+async def _accept_open(cq, bot: Bot, g: dict, uid: int):
+    gid = g["_id"]
+    if uid == g["a"]:
+        return await cq.answer("چالشِ خودته! صبر کن یه حریف پیدا بشه. 😄", show_alert=True)
+    adoc, tdoc = await store.get(g["a"]), await store.get(uid)
+    if not adoc or not tdoc:
+        return await cq.answer("بازیکن پیدا نشد؛ اول ثبت‌نام کن. 📜", show_alert=True)
+    err = await _precheck(adoc, tdoc, int(g.get("stake", 0)), ignore=gid)
+    if err:
+        return await cq.answer(re.sub(r"<[^>]+>", "", err)[:190], show_alert=True)
+    claimed = await store.rgames.find_one_and_update(
+        {"_id": gid, "status": "wait", "t": None}, {"$set": {"status": "holding", "t": uid, "uids": [g["a"], uid]}},
+        return_document=ReturnDocument.AFTER)
+    if not claimed:
+        return await cq.answer("یکی زودتر قبول کرد! ⌛", show_alert=True)
+    await _go_live(cq, bot, claimed)
+
+
+async def _go_live(cq, bot: Bot, g: dict):
+    """بعد از قبولِ چالش: امانتِ شرط، شروعِ بازی."""
+    gid = g["_id"]
     stake = int(g.get("stake", 0))
     if stake > 0:
         ok_a = await _hold(g["a"], gid, stake)
@@ -525,7 +740,7 @@ async def _accept(cq, bot: Bot, gid: ObjectId, uid: int):
     g = await _claim(gid, "holding", "live", upd=time.time(), started=time.time())
     await cq.answer("بازی شروع شد! 🎬")
     kind = g["kind"]
-    spawn({"d": _run_dice, "q": _run_draw, "b": _run_bluff}[kind](bot, gid))
+    spawn({"d": _run_dice, "q": _run_draw, "b": _run_bluff, "m": _run_bomb, "j": _run_21}[kind](bot, gid))
 
 
 async def _decline(cq, bot: Bot, gid: ObjectId, uid: int):
@@ -732,6 +947,177 @@ async def _bluff_cb(cq, bot: Bot, act: str, gid: ObjectId, arg: str, uid: int):
     await cq.answer()
 
 
+# ───────────────────────────── 💣 بمب ─────────────────────────────
+def _bomb_kb(gid):
+    return kb([btn("💣 پاس بده", f"rg:bm:{gid}:p", "blue"), btn("✂️ خنثی کن", f"rg:bm:{gid}:d", "red")])
+
+
+def _defuse_p(c: int, f: int) -> float:
+    """شانسِ خنثی‌سازی: هر چی فیتیله داغ‌تر (نزدیک‌تر به انفجار) بیشتر؛ بازیکن فقط «داغی» رو می‌بینه نه عددِ فیتیله رو."""
+    return 0.15 + 0.7 * min(1.0, c / f if f else 0.0)
+
+
+async def _bomb_show(bot: Bot, g: dict):
+    ad, td = await store.get(g["a"]), await store.get(g["t"])
+    holder = ad if g["holder"] == g["a"] else td
+    c, f = int(g.get("c", 0)), int(g.get("f", BOMB_MAX))
+    heat = c / f if f else 0
+    ic = "🧊" if heat < .25 else "🌡" if heat < .5 else "🔥" if heat < .75 else "☄️"
+    lines = [f"{display(ad)} 💣 {display(td)}"]
+    if g.get("last"):
+        lines.append(g["last"])
+    lines += [f"{ic} داغیِ فیتیله: {_bar(c, f, 8)}  ·  پاس‌ها: <b>{c}</b>",
+              f"💣 بمب دستِ <b>{_nm(holder)}</b> ـه! ⏳ {BOMB_IDLE} ثانیه وقت داره.", "┈┈┈┈┈┈┈┈┈┈",
+              "💣 <b>پاس بده</b>: بمب میره سمتِ حریف (اگه فیتیله تموم شده باشه، تو دستِ خودت می‌ترکه!)",
+              "✂️ <b>خنثی کن</b>: همه‌چی یا هیچی؛ هر چی فیتیله داغ‌تر، شانسِ موفقیتش بیشتر."]
+    await _edit(bot, g, panel("red", "💣", "بمب — دست‌به‌دست", lines, _stake_line(int(g.get("stake", 0)))), _bomb_kb(g["_id"]))
+
+
+async def _run_bomb(bot: Bot, gid):
+    try:
+        g = await store.rgames.find_one({"_id": gid})
+        holder = random.choice([g["a"], g["t"]])
+        g = await store.rgames.find_one_and_update({"_id": gid}, {"$set": {
+            "f": random.randint(BOMB_MIN, BOMB_MAX), "c": 0, "holder": holder, "upd": time.time(),
+            "last": f"🎲 قرعه افتاد: بمب اول دستِ <b>{_nm(await store.get(holder))}</b> ـه!"}}, return_document=ReturnDocument.AFTER)
+        await _bomb_show(bot, g)
+        while True:                                                 # نگهبانِ بیکاری
+            await asyncio.sleep(2)
+            g = await store.rgames.find_one({"_id": gid})
+            if not g or g["status"] != "live":
+                return
+            if time.time() - float(g.get("upd", 0)) > BOMB_IDLE:
+                idle = g["holder"]
+                other = g["t"] if idle == g["a"] else g["a"]
+                await _end(bot, gid, {"holder": idle, "c": int(g.get("c", 0))}, other, res_lines=[
+                    f"💤 <b>{_nm(await store.get(idle))}</b> خشکش زد و بمب تو دستش ترکید! 💥"])
+                return
+    except Exception:
+        log.exception("rg bomb failed")
+        await _abort(bot, gid)
+
+
+async def _bomb_cb(cq, bot: Bot, gid: ObjectId, arg: str, uid: int):
+    g = await store.rgames.find_one({"_id": gid})
+    if not g or g["status"] != "live" or g["kind"] != "m":
+        return await cq.answer("تموم شد. ⌛", show_alert=True)
+    if uid not in (g["a"], g["t"]):
+        return await cq.answer("تماشاچی‌ها دور بایستن! 💣", show_alert=True)
+    if g.get("holder") != uid:
+        return await cq.answer("بمب دستِ تو نیست! ⏳", show_alert=True)
+    other = g["t"] if uid == g["a"] else g["a"]
+    c, f = int(g.get("c", 0)), int(g.get("f", BOMB_MAX))
+    me = _nm(await store.get(uid))
+    if arg == "p":
+        if c + 1 >= f:
+            done = await _end(bot, gid, {"holder": uid, "c": c}, other, res_lines=[
+                f"💥 فیتیله تموم بود! بمب تو دستِ <b>{me}</b> ترکید (فیتیله {f} پاسی بود)."])
+            return await cq.answer("💥 ترکید!" if done else "تموم شد. ⌛", show_alert=bool(done))
+        n = await store.rgames.find_one_and_update(
+            {"_id": gid, "status": "live", "holder": uid, "c": c},
+            {"$set": {"c": c + 1, "holder": other, "upd": time.time(), "last": f"💨 <b>{me}</b> بمب رو پاس داد!"}}, return_document=ReturnDocument.AFTER)
+        if not n:
+            return await cq.answer("تموم شد. ⌛", show_alert=True)
+        await cq.answer("پاس دادی! 💨")
+        return await _bomb_show(bot, n)
+    if arg == "d":
+        ok = random.random() < _defuse_p(c, f)
+        win = uid if ok else other
+        done = await _end(bot, gid, {"holder": uid, "c": c}, win, res_lines=[
+            f"✂️ <b>{me}</b> سیمِ درست رو برید و بمب رو خنثی کرد! 😎" if ok
+            else f"💥 <b>{me}</b> سیمِ اشتباه رو برید و بمب منفجر شد! (فیتیله {f} پاسی بود)"])
+        return await cq.answer(("✂️ خنثی شد! 😎" if ok else "💥 سیمِ اشتباه!") if done else "تموم شد. ⌛", show_alert=bool(done))
+    await cq.answer()
+
+
+# ───────────────────────────── 🃏 بیست‌ویک ─────────────────────────────
+def _bj_kb(gid):
+    return kb([btn("🃏 کارت", f"rg:cd:{gid}:h", "green"), btn("✋ بس", f"rg:cd:{gid}:s", "red")])
+
+
+async def _bj_show(bot: Bot, g: dict):
+    ad, td = await store.get(g["a"]), await store.get(g["t"])
+    tot, std = g["tot"], g["std"]
+    row = lambda d: f"{_nm(d)}: <b>{tot[str(d['user_id'])]}</b>" + (" ✋" if std[str(d['user_id'])] else "")
+    turn_d, opp_d = (ad, td) if g["turn"] == g["a"] else (td, ad)
+    lines = [f"{display(ad)} 🃏 {display(td)}", f"{row(ad)}   ⟷   {row(td)}"]
+    if g.get("last"):
+        lines.append(g["last"])
+    if std[str(opp_d["user_id"])]:
+        lines.append(f"⚠️ {_nm(opp_d)} روی <b>{tot[str(opp_d['user_id'])]}</b> ایستاده؛ باید ازش بالاتر بری (و از {BJ_TARGET} رد نشی)!")
+    lines.append(f"🎯 نوبتِ <b>{_nm(turn_d)}</b> · ⏳ {BJ_IDLE} ثانیه")
+    await _edit(bot, g, panel("green", "🃏", f"بیست‌ویک — نزدیک‌تر به {BJ_TARGET}", lines, _stake_line(int(g.get("stake", 0)))), _bj_kb(g["_id"]))
+
+
+async def _run_21(bot: Bot, gid):
+    try:
+        g = await store.rgames.find_one({"_id": gid})
+        a, t = g["a"], g["t"]
+        card = lambda: random.randint(1, 10)
+        g = await store.rgames.find_one_and_update({"_id": gid}, {"$set": {
+            "tot": {str(a): card() + card(), str(t): card() + card()}, "std": {str(a): False, str(t): False},
+            "turn": random.choice([a, t]), "mv": 0, "upd": time.time(), "last": "🃏 هر کس دو کارت گرفت!"}}, return_document=ReturnDocument.AFTER)
+        await _bj_show(bot, g)
+        while True:                                                 # نگهبانِ بیکاری
+            await asyncio.sleep(3)
+            g = await store.rgames.find_one({"_id": gid})
+            if not g or g["status"] != "live":
+                return
+            if time.time() - float(g.get("upd", 0)) > BJ_IDLE:
+                idle = g["turn"]
+                other = g["t"] if idle == g["a"] else g["a"]
+                await _end(bot, gid, {"turn": idle, "mv": int(g.get("mv", 0))}, other, res_lines=[
+                    f"⌛ <b>{_nm(await store.get(idle))}</b> وقتی جواب نداد؛ باخت."])
+                return
+    except Exception:
+        log.exception("rg 21 failed")
+        await _abort(bot, gid)
+
+
+async def _21_cb(cq, bot: Bot, gid: ObjectId, arg: str, uid: int):
+    g = await store.rgames.find_one({"_id": gid})
+    if not g or g["status"] != "live" or g["kind"] != "j" or not g.get("tot"):
+        return await cq.answer("تموم شد. ⌛", show_alert=True)
+    if uid not in (g["a"], g["t"]):
+        return await cq.answer("تماشاچی‌ها کارت نمی‌کشن! 🃏", show_alert=True)
+    if g.get("turn") != uid:
+        return await cq.answer("الان نوبتِ تو نیست. ⏳", show_alert=True)
+    if arg not in ("h", "s"):
+        return await cq.answer()
+    a, t = g["a"], g["t"]
+    other = t if uid == a else a
+    mv = int(g.get("mv", 0))
+    tot, std = dict(g["tot"]), dict(g["std"])
+    me = _nm(await store.get(uid))
+    flt = {"turn": uid, "mv": mv}
+    if arg == "h":
+        card = random.randint(1, 10)
+        tot[str(uid)] = int(tot[str(uid)]) + card
+        if tot[str(uid)] > BJ_TARGET:
+            done = await _end(bot, gid, flt, other, tot=tot, res_lines=[f"🃏 <b>{me}</b> کارتِ {card} کشید و شد <b>{tot[str(uid)]}</b> — سوخت! 💥"])
+            return await cq.answer("💥 سوختی!" if done else "تموم شد. ⌛", show_alert=bool(done))
+        last = f"🃏 <b>{me}</b> کارتِ <b>{card}</b> کشید."
+        if tot[str(uid)] == BJ_TARGET:
+            std[str(uid)] = True
+            last += f" {BJ_TARGET}! خودکار «بس» شد. 🎯"
+    else:
+        std[str(uid)] = True
+        last = f"✋ <b>{me}</b> «بس» گفت."
+    if std[str(uid)] and std[str(other)]:
+        ta, tt = int(tot[str(a)]), int(tot[str(t)])
+        w = a if ta > tt else t if tt > ta else None
+        done = await _end(bot, gid, flt, w, tot=tot, res_lines=[last, f"🃏 {_nm(await store.get(a))} <b>{ta}</b> ⟷ <b>{tt}</b> {_nm(await store.get(t))}"])
+        return await cq.answer("تموم شد! 🎬" if done else "تموم شد. ⌛", show_alert=not done)
+    nxt = other if not std[str(other)] else uid
+    n = await store.rgames.find_one_and_update(
+        {"_id": gid, "status": "live", **flt},
+        {"$set": {"tot": tot, "std": std, "turn": nxt, "mv": mv + 1, "upd": time.time(), "last": last}}, return_document=ReturnDocument.AFTER)
+    if not n:
+        return await cq.answer("تموم شد. ⌛", show_alert=True)
+    await cq.answer(f"{tot[str(uid)]} 🃏" if arg == "h" else "✋ بس!")
+    await _bj_show(bot, n)
+
+
 # ───────────────────────────── 🧯 لغو/ریکاوری ─────────────────────────────
 async def _abort(bot: Bot, gid):
     """خطای غیرمنتظره: بازی بسته میشه و همه‌ی پول‌ها برمی‌گردن."""
@@ -802,7 +1188,8 @@ async def do_club(m):
     ]
     if wounded(doc, now):
         lines += ["┈┈┈┈┈┈┈┈┈┈", f"🩸 زخمی‌ای! ({int(float(doc['rg_wound_until']) - now) // 60 + 1} دقیقه‌ی دیگه) — یه دوست «ترمیم» کنه پاک میشه."]
-    helps = ["┈┈┈┈┈┈┈┈┈┈", "با «ریپلای» روی یه بازیکن:", "🎲 <b>تاس [مبلغ]</b> · 🔫 <b>هفت تیر [مبلغ]</b> · 🎭 <b>بازی بلوف [مبلغ]</b>",
+    helps = ["┈┈┈┈┈┈┈┈┈┈", "با «ریپلای» روی یه بازیکن:", "🎲 <b>تاس</b> · 🔫 <b>هفت تیر</b> · 🎭 <b>بازی بلوف</b> · 💣 <b>بمب بازی</b> · 🃏 <b>بیست و یک</b>  (+ مبلغِ اختیاری)",
+             "🌍 بدونِ ریپلای، چالشِ باز: <b>تاس باز</b> · <b>بمب بازی باز 30</b> …",
              "⚔️ <b>حمله</b> · 🥋 <b>تمرین</b> · 🩹 <b>ترمیم</b> · «سریع ترین ها»"]
     await m.reply(panel("purple", "🎭", "باشگاهِ ریپلای", lines + helps, "💅 <i>«هر چی بیشتر بازی کنی، بیشتر بهت می‌چسبم.»</i>"),
                   reply_markup=kb([btn("🏟 میدان", "sk:ar:0", "blue"), btn("⚡ سریع‌ترین‌ها", "rg:lb", "green")]))
@@ -827,7 +1214,19 @@ async def handle(m, bot: Bot) -> bool:
     if FAST_RE.fullmatch(t):
         await do_fastest(m)
         return True
-    kind, rx = next(((k, r) for k, r in (("d", DICE_RE), ("q", DRAW_RE), ("b", BLUFF_RE)) if r.fullmatch(t)), (None, None))
+    mo = OPEN_RE.fullmatch(t)
+    if mo:                                                  # 🌍 چالشِ باز (بدونِ ریپلای)
+        kind = _open_kind(mo.group(1))
+        if not kind:
+            return False
+        if not is_group(m):
+            await say(m, "چالشِ باز فقط تو گروه کار می‌کنه؛ اونجا یه حریف پیدا میشه. 👥", "🎭", "باشگاه", "orange")
+            return True
+        adoc = await store.get(m.from_user.id)
+        if adoc:
+            await _open_public(m, bot, kind, adoc, int(mo.group(2) or 0))
+        return True
+    kind, rx = next(((k, r) for k, r in _BY_KIND if r.fullmatch(t)), (None, None))
     if not kind or not m.reply_to_message:
         return False
     if not is_group(m):
@@ -847,7 +1246,7 @@ async def handle(m, bot: Bot) -> bool:
 
 
 async def rg_cb(cq, bot: Bot, parts: list):
-    """rg:ac:<id> · rg:no:<id> · rg:fs|sh:<id> · rg:bp|bc:<id>:<n> · rg:bj:<id>:<y|n> · rg:rm:<k>:<a>:<t>:<stake> · rg:ci · rg:lb"""
+    """rg:ac:<id> · rg:no:<id> · rg:fs|sh:<id> · rg:bp|bc:<id>:<n> · rg:bj:<id>:<y|n> · rg:bm:<id>:<p|d> · rg:cd:<id>:<h|s> · rg:rm:<k>:<a>:<t>:<stake> · rg:ci · rg:lb"""
     uid = cq.from_user.id
     try:
         act = parts[1]
@@ -859,6 +1258,10 @@ async def rg_cb(cq, bot: Bot, parts: list):
             await _draw_press(cq, bot, ObjectId(parts[2]), uid, early=(act == "fs"))
         elif act in ("bp", "bc", "bj") and len(parts) >= 4:
             await _bluff_cb(cq, bot, act, ObjectId(parts[2]), parts[3], uid)
+        elif act == "bm" and len(parts) >= 4:
+            await _bomb_cb(cq, bot, ObjectId(parts[2]), parts[3], uid)
+        elif act == "cd" and len(parts) >= 4:
+            await _21_cb(cq, bot, ObjectId(parts[2]), parts[3], uid)
         elif act == "rm" and len(parts) >= 6:
             await _rematch(cq, bot, parts[2], int(parts[3]), int(parts[4]), int(parts[5]), uid)
         elif act == "ci":
