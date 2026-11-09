@@ -25,6 +25,7 @@ from guilds import (
     do_guild_create, do_guild_donate, do_guild_fort, do_guild_invite, do_guild_join, do_guild_leave, do_guild_me,
     do_guild_war,
 )
+import reply_games
 import skirmish
 from intents import (
     ACCEPT_RE, BLESS_RE, BOARD_RE, BOSS_CALL_RE, BOSS_HIT_RE, BOSS_STATUS_RE, BUY_RE, CAFE_RE,
@@ -70,7 +71,7 @@ def looks_like_game(c: str, n: str, m: Message) -> bool:
         return True
     if TRAVEL_RE.fullmatch(c) and detect_biome(c):
         return True
-    if skirmish.matches(m.text or "", bool(m.reply_to_message)):   # ⚔️ حمله/تمرین/تحقیر/شرط/دزدی/ترمیم/هدیه/جایزه/جاسوسی/جنگ/میدان
+    if reply_games.matches(m.text or "", bool(m.reply_to_message)) or skirmish.matches(m.text or "", bool(m.reply_to_message)):   # ⚔️ حمله/تمرین/تحقیر/شرط/دزدی/ترمیم/هدیه/جایزه/جاسوسی/جنگ/میدان
         return True
     return False
 
@@ -127,6 +128,10 @@ async def handle_text(m: Message, bot: Bot):
 
     # ۱) اعدام اجباری
     if group and (("@" in n) or m.reply_to_message) and await do_forced(m, n, c):
+        return
+
+    # ۱.۴) 🎭 باشگاهِ ریپلای: تاس، هفت‌تیر، بلوف، باشگاه، سریع ترین ها
+    if await reply_games.handle(m, bot):
         return
 
     # ۱.۵) کنش‌های ریپلایی: حمله، دزدی، ترمیم، هدیه، جایزه‌ی سر، جاسوسی، حالت جنگ

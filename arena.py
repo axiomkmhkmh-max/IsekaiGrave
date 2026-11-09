@@ -381,6 +381,11 @@ async def attack_open(m, adoc: dict, tdoc: dict, kind: str = "attack"):
         lines.append(f"🔋 شارژ: {charges}/{MAX_CHARGES} · ⚡ تمرکز: {focus}/{FOCUS_MAX}" + (" — ✨ ژستِ ویژه آماده‌ست!" if special else "")
                      + (" · 💰 غارتِ بیشتر (جنگ/انتقام)" if high else ""))
         lines.append(edict_text(day_key()))
+        try:
+            import reply_games
+            lines += reply_games.attack_panel_lines(adoc, tdoc, now)          # 🌡 تب و 🩸 زخم‌ها
+        except Exception:
+            log.exception("rg attack lines failed")
         lines.append(combo_text(adoc.get("sk_cb"), adoc.get("sk_cb_t"), ATT, ATT_BASE, now))
         dtxt = combo_need(tdoc.get("sk_cbd"), tdoc.get("sk_cbd_t"), DEF_BASE, now)
         if dtxt:
@@ -767,6 +772,11 @@ async def _resolve(bot: Bot, clash: dict):
             await quest_progress(_Shim(bot, clash["chat_id"], uid), kind, uid=uid)
         except Exception:
             log.exception("clash quest hook failed")
+    try:
+        import reply_games
+        await reply_games.after_clash(bot, clash, winner)                  # 🌡 تب + 🎁 صندوقِ روزانه
+    except Exception:
+        log.exception("rg after_clash hook failed")
     for uid in clash.get("uids", []):
         try:
             gd = await store.get(uid)
@@ -802,6 +812,8 @@ async def _resolve_inner(clash: dict) -> tuple:
         crit = res > 0 and not auto
         read = res < 0 and not auto
         fa, fb = await _fighter(adoc), await _fighter(tdoc)
+        import reply_games
+        mod_notes += await reply_games.pre_fight(adoc, tdoc, st, dfn, auto, fa, fb, kind)      # 🌡 تب · 🎖 تسلط · 🩸 زخم
         special = st == "x" or dfn == "v"
         souls = SPECIAL_EDGE_SOULS if special else 2
         first = apply_edge(fa, fb, res, MAX_SOUL, souls)
@@ -1010,6 +1022,7 @@ async def _resolve_inner(clash: dict) -> tuple:
             await _push_log(tid, f"🏆 حمله‌ی {an} رو دفع کردی" + (f": +{dloot} {GS}" if dloot else ""))
             markup = kb([btn("🥋 ریمچِ تمرینی", f"sk:rm:{aid}:{tid}", "green"), btn("🏟 میدان", "sk:ar:0", "blue")])
             color = "blue"
+        extra += await reply_games.post_fight(adoc, tdoc, st, dfn, win, res, auto, an, dn)      # 🩸 زخمِ تازه · 🎖 تسلطِ ژست · 🌡 XPِ تب
         # ── 🧠 خوندنِ حرکت، 🎼 کامبو، 🆚 رقابت، 🔥 روزهای پشت‌سرهم، 🏷 لقب‌ها
         if res > 0 and not auto:
             await _bump(aid, "sk_reads")

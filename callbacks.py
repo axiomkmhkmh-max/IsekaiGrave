@@ -69,6 +69,15 @@ async def handle_cb(cq: CallbackQuery, bot: Bot):
             await cq.answer()
         return
 
+    # 🎭 باشگاهِ ریپلای (تاس، هفت‌تیر، بلوف): خودش جواب کلیک رو می‌ده
+    if kind == "rg":
+        if registered:
+            import reply_games
+            await reply_games.rg_cb(cq, bot, parts)
+        else:
+            await cq.answer("اول ثبت‌نام کن. 🙂", show_alert=True)
+        return
+
     # 🏟 میدان (حمله‌ی ژستی، تمرین، شرط‌بندی، انتقام): خودش جواب کلیک رو می‌ده
     if kind == "sk":
         if registered:

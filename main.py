@@ -31,6 +31,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from commands import setup_commands
 from config import BOT_TOKEN, DB_NAME, log, MONGO_URI, runtime
 from arena import recover_arena
+from reply_games import recover_rg
 from battle import recover_battles
 from database import store
 from exchange import recover_exchange
@@ -65,6 +66,7 @@ async def main():
     await recover_battles(bot)      # ⚔️ نبردهای در جریان ادامه پیدا می‌کنن
     await recover_sieges(bot)       # 🏰 محاصره‌های باز نتیجه می‌گیرن
     await recover_arena(bot)        # 🏟 برخوردهای ژستی و شرط‌بندی‌های نیمه‌کاره (پرداخت/بازگشتِ امانت)
+    await recover_rg(bot)           # 🎭 بازی‌های باشگاهِ ریپلای (تاس/هفت‌تیر/بلوف): بستن و برگرداندنِ امانت‌ها
     await notify_if_updated(bot)   # اگه BOT_VERSION عوض شده باشه، به پلیرها پیام آپدیت میره
     weekly_task = asyncio.create_task(weekly_loop(bot))   # 🏆 تغییر هفته + اعلامیه‌ی گروه برتر
     world_task = asyncio.create_task(world_loop(bot)) if WORLD_ENABLED else None   # 🌍 دنیای زنده (ساعت، NPCها، رویدادها، اقتصاد)

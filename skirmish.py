@@ -236,6 +236,11 @@ async def _heal(m, adoc: dict, tdoc: dict):
         if adoc.get("cls") == "priest":
             h = int(h * 1.3)                                                  # ✨ کشیش: ۳۰٪ شفای بیشتر
         doc = await adjust_survival(tid, h, "blessings_received")
+        try:
+            import reply_games
+            await reply_games.on_heal(aid, tid)                              # 🩸 ترمیم زخمِ باشگاه رو پاک می‌کنه
+        except Exception:
+            log.exception("rg heal hook failed")
         await store.users.update_one({"user_id": aid}, {"$set": {"sk_heal_t": now, "sk_heal_day": today, "sk_heal_n": n_today + 1}})
         await grant(aid, xp=10 if rescue else 5)
         await m.reply(panel("green", "🆘" if rescue else "🩹", "نجات!" if rescue else "ترمیم", [

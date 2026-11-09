@@ -33,6 +33,7 @@ class Store:
         self.wevents = db["wevents"]        # 🌍 رویدادهای جهان + تاریخچه
         self.bounties = db["bounties"]      # 🎯 جایزه‌ی سر (skirmish.py)
         self.clashes = db["clashes"]        # 🏟 برخوردهای ژستی، تمرین‌ها و شرط‌بندی‌ها (arena.py)
+        self.rgames = db["rgames"]          # 🎭 بازی‌های باشگاهِ ریپلای: تاس، هفت‌تیر، بلوف (reply_games.py)
 
     async def ensure_indexes(self):
         await self.users.create_index("user_id", unique=True)
@@ -61,6 +62,9 @@ class Store:
         await self.bounties.create_index([("status", 1), ("expires_at", 1)])
         await self.clashes.create_index([("kind", 1), ("status", 1), ("uids", 1)])
         await self.clashes.create_index("created_at", expireAfterSeconds=14 * 86400, name="clashes_ttl")
+        await self.rgames.create_index([("uids", 1), ("status", 1)])
+        await self.rgames.create_index("created_at", expireAfterSeconds=7 * 86400, name="rgames_ttl")
+        await self.users.create_index([("rg_best_ms", 1)], sparse=True)
         await self.users.create_index([("sk_rp_wk", 1), ("sk_rp_w", -1)])
         await self.users.create_index([("sk_rp", -1)])
         await self.wevents.create_index("id", unique=True)
