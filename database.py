@@ -30,7 +30,8 @@ class Store:
         self.battles = db["battles"]        # ⚔️ نبردهای تاکتیکی (دوئل)
         self.sieges = db["sieges"]          # 🏰 محاصره‌ها
         self.wnpcs = db["wnpcs"]            # 🌍 NPCهای زنده (حافظه، روابط، مکان، اهداف)
-        self.wevents = db["wevents"]        # 🌍 رویدادهای جهان + تاریخچه\n        self.chronicle = db["world_chronicle"]  # 📜 تاریخچه‌ی پایدار و سراسری جهان
+        self.wevents = db["wevents"]        # 🌍 رویدادهای جهان + تاریخچه
+        self.chronicle = db["world_chronicle"]  # 📜 تاریخچه‌ی پایدار و سراسری جهان
         self.bounties = db["bounties"]      # 🎯 جایزه‌ی سر (skirmish.py)
         self.clashes = db["clashes"]        # 🏟 برخوردهای ژستی، تمرین‌ها و شرط‌بندی‌ها (arena.py)
         self.rrpg = db["rrpg"]              # 🎭 Reply-RPG: هیولای زنجیره‌ای، دوئلِ خیابانی، کمین، طلسم، سیاه‌چال (reply_rpg.py)
