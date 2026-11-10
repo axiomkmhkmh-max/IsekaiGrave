@@ -4,6 +4,7 @@ from io import BytesIO
 from PIL import Image
 
 from world_art import render_world_art, _art_prompt
+from ui import CbMsg
 
 
 class WorldArtTests(unittest.TestCase):
@@ -15,6 +16,21 @@ class WorldArtTests(unittest.TestCase):
                 image = Image.open(BytesIO(payload))
                 self.assertEqual(image.size, (1200, 720))
                 self.assertEqual(image.format, "PNG")
+
+
+    def test_callback_message_adapter_supports_photo_replies(self):
+        class FakeMessage:
+            async def answer_photo(self, photo=None, **kwargs):
+                return (photo, kwargs)
+
+        class FakeCallback:
+            from_user = type("User", (), {"id": 1})()
+            message = FakeMessage()
+
+        adapter = CbMsg(FakeCallback(), None)
+        import asyncio
+        result = asyncio.run(adapter.reply_photo(b"image", caption="test"))
+        self.assertEqual(result, (b"image", {"caption": "test"}))
 
     def test_unknown_theme_falls_back_safely(self):
         payload = render_world_art("unknown", "عنوان")

@@ -289,9 +289,13 @@ async def send_world_art(message, kind: str, title: str, subtitle: str = "", sta
         import asyncio
         from aiogram.types import BufferedInputFile
         payload = await _generate_remote_art(kind, title, subtitle, stats)
+        source = "remote"
         if payload is None:
+            source = "local-fallback"
             payload = await asyncio.to_thread(render_world_art, kind, title, subtitle, stats)
         await message.reply_photo(BufferedInputFile(payload, filename=f"isekai-{kind}.png"))
+        log.info("Artwork delivered: kind=%s source=%s chat_id=%s", kind, source,
+                 getattr(getattr(message, "chat", None), "id", "unknown"))
         return True
     except Exception:
         log.exception("Could not render/send world artwork (%s)", kind)

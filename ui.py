@@ -81,6 +81,10 @@ class CbMsg:
     async def reply(self, text, **kw):
         return await self._msg.answer(text, **kw)
 
+    async def reply_photo(self, photo, **kw):
+        """همان رابط Message برای ارسال عکس؛ لازم برای منوهایی که از callback اجرا می‌شوند."""
+        return await self._msg.answer_photo(photo=photo, **kw)
+
     answer = reply
 
 
