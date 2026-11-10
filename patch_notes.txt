@@ -15,3 +15,6 @@ v4.1 — Living World Visual Update
 - MongoDB now enforces one active global world boss with a partial unique index; duplicate legacy active bosses are archived safely at startup.
 
 • v4.1.2: اتصال تصاویر محلیِ بخش‌ها به منوهای callback، انتخاب منطقه، ماجراجویی، NPC، کوله‌پشتی و آهنگری؛ تم‌های تصویری جداگانه برای زیست‌بوم‌ها.
+
+
+🎨 موتور تصویرسازی: promptهای اختصاصی سینمایی برای هر بخش، اتصال اختیاری به API تصویرساز سازگار با OpenAI، کش فایل و fallback امن در صورت قطعی سرویس.

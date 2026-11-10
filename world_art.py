@@ -8,12 +8,23 @@ from __future__ import annotations
 import hashlib
 import io
 import random
+import os
+import logging
+import base64
+from pathlib import Path
 from functools import lru_cache
 from typing import Iterable, Optional
 
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 W, H = 1200, 720
+log = logging.getLogger("isekai-grave.art")
+ART_CACHE_DIR = Path(os.getenv("IMAGE_CACHE_DIR", "/tmp/isekai_grave_art_cache"))
+ART_API_URL = os.getenv("IMAGE_API_URL", "").strip()
+ART_API_KEY = os.getenv("IMAGE_API_KEY", "").strip()
+ART_MODEL = os.getenv("IMAGE_MODEL", "").strip()
+ART_TIMEOUT = float(os.getenv("IMAGE_API_TIMEOUT", "90"))
+ART_STYLE = ("Premium cinematic fantasy MMORPG concept art, highly detailed painterly realism, richly layered environment, physically based materials, dramatic atmospheric lighting, volumetric rays, intricate architecture and props, believable scale and perspective, professional AAA game key art, 16:9 landscape composition, no text, no letters, no watermark. Dark-fantasy-adventure aesthetic with rich color grading.")
 FONT_PATH = "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf"
 FONT_BOLD = "/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf"
 LATIN_FONT = "/usr/share/fonts/truetype/lato/Lato-Regular.ttf"
@@ -193,18 +204,98 @@ def _render_world_art_cached(kind: str, title: str, subtitle: str, stats: tuple)
     return out.getvalue()
 
 
+def _art_prompt(kind: str, title: str, subtitle: str = "", stats=None) -> str:
+    """Create a scene-specific prompt; visible UI text is overlaid separately by Telegram."""
+    scenes = {
+        "world": "A breathtaking establishing view of a vast interconnected fantasy kingdom, distant castles, roads, settlements and atmospheric landscape",
+        "boss": "A colossal terrifying ancient dragon world boss facing tiny adventurers, immense scale, dramatic fire and smoke",
+        "npc": "A memorable fantasy RPG non-player character in a richly detailed lived-in location, expressive cinematic character portrait",
+        "region": "A distinctive fantasy wilderness region with landmarks, layered terrain and environmental storytelling",
+        "chronicle": "An ancient royal archive hall with open illuminated chronicle tome, relics, candles and magical history",
+        "news": "A fantasy kingdom news scene showing heralds announcing a major event in a crowded medieval square",
+        "character": "A legendary RPG hero character showcase, full-body heroic pose, ornate armor, signature weapon and magical effects",
+        "market": "A bustling medieval fantasy bazaar packed with detailed stalls, merchants, rare glowing artifacts, coins and adventurers",
+        "guild": "A grand fantasy guild headquarters interior with banners, a war table, adventurers and warm cinematic lighting",
+        "quest": "An evocative fantasy quest location with a mysterious objective, ancient ruins, treasure and environmental clues",
+        "forest": "An enchanted ancient forest with enormous trees, shafts of sunlight, mossy ruins and magical fireflies",
+        "sea": "A dramatic fantasy storm coast, crashing waves, ships, sea cliffs and distant mysterious islands",
+        "ruins": "Ancient colossal civilization ruins reclaimed by nature, intricate stonework and shafts of golden light",
+        "castle": "A majestic fantasy castle and its surrounding medieval city, intricate towers, banners and dramatic landscape",
+        "volcano": "A dangerous volcanic wasteland with rivers of lava, ash clouds, black rock and glowing fissures",
+        "desert": "A vast fantasy desert with monumental sandstone ruins, dunes, caravan silhouettes and warm atmospheric light",
+        "snow": "A majestic frozen mountain kingdom with icebound towers, snow-covered pines and aurora",
+        "swamp": "An eerie fantasy swamp with twisted trees, luminous plants, ancient stone fragments and ground mist",
+        "forge": "A legendary dwarven fantasy forge, blazing furnace, master-crafted weapons and glowing molten metal",
+        "inventory": "An exquisite fantasy adventurer's equipment display, ornate weapons, armor, potions and relics arranged on a table",
+        "arena": "A monumental fantasy coliseum filled with spectators, banners, dramatic sunlight and battle-ready champions",
+        "profile": "A premium fantasy RPG character portrait backdrop with elegant magical motifs and cinematic depth",
+    }
+    scene = scenes.get(str(kind), scenes["world"])
+    context = f" Scene title: {str(title)[:100]}."
+    if subtitle:
+        context += f" Story context: {str(subtitle)[:240]}."
+    return f"{ART_STYLE} Scene: {scene}.{context} The image must communicate the scene visually; do not render any typography."
+
+
+async def _generate_remote_art(kind: str, title: str, subtitle: str = "", stats=None) -> Optional[bytes]:
+    """Use an optional OpenAI-compatible image-generation endpoint and cache the result."""
+    if not ART_API_URL:
+        return None
+    import aiohttp
+
+    prompt = _art_prompt(kind, title, subtitle, stats)
+    cache_key = hashlib.sha256(f"{ART_API_URL}|{ART_MODEL}|{prompt}".encode("utf-8")).hexdigest()
+    try:
+        ART_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        cache_file = ART_CACHE_DIR / f"{cache_key}.png"
+        if cache_file.is_file() and cache_file.stat().st_size > 10_000:
+            return cache_file.read_bytes()
+
+        payload = {"prompt": prompt, "size": "1536x1024", "n": 1, "response_format": "b64_json"}
+        if ART_MODEL:
+            payload["model"] = ART_MODEL
+        headers = {"Content-Type": "application/json"}
+        if ART_API_KEY:
+            headers["Authorization"] = f"Bearer {ART_API_KEY}"
+        timeout = aiohttp.ClientTimeout(total=ART_TIMEOUT)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(ART_API_URL, json=payload, headers=headers) as response:
+                response.raise_for_status()
+                result = await response.json(content_type=None)
+            item = (result.get("data") or [{}])[0]
+            if item.get("b64_json"):
+                image_bytes = base64.b64decode(item["b64_json"])
+            elif item.get("url"):
+                async with session.get(item["url"]) as image_response:
+                    image_response.raise_for_status()
+                    image_bytes = await image_response.read()
+            else:
+                raise ValueError("Image API response has neither data[0].b64_json nor data[0].url")
+        # Validate image bytes before persisting.
+        with Image.open(io.BytesIO(image_bytes)) as generated:
+            generated.verify()
+        temp_file = cache_file.with_suffix(".tmp")
+        temp_file.write_bytes(image_bytes)
+        temp_file.replace(cache_file)
+        return image_bytes
+    except Exception as exc:
+        log.warning("Remote artwork generation failed for %s: %s", kind, exc)
+        return None
+
+
 async def send_world_art(message, kind: str, title: str, subtitle: str = "", stats=None) -> bool:
-    """Send a generated section illustration; artwork failure never blocks gameplay."""
+    """Send premium generated artwork when configured; otherwise retain local safe fallback."""
     try:
         import asyncio
         from aiogram.types import BufferedInputFile
-        payload = await asyncio.to_thread(render_world_art, kind, title, subtitle, stats)
+        payload = await _generate_remote_art(kind, title, subtitle, stats)
+        if payload is None:
+            payload = await asyncio.to_thread(render_world_art, kind, title, subtitle, stats)
         await message.reply_photo(BufferedInputFile(payload, filename=f"isekai-{kind}.png"))
         return True
     except Exception:
-        # Pillow/font/platform issues must not break the text-based game.
+        log.exception("Could not render/send world artwork (%s)", kind)
         return False
-
 
 
 async def send_region_art(message, biome_key: str, title: str, subtitle: str = "", stats=None) -> bool:
