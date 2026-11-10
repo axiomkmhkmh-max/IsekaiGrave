@@ -66,6 +66,8 @@ async def do_guild_create(m: Message, name: str):
         await say(m, "این اسم قبلاً ثبت شده. یه اسم دیگه امتحان کن. 😊", "🛡", "گیلد", "blue")
         return
     await store.users.update_one({"user_id": uid}, {"$set": {"guild": name}})
+    from world_engine import record_event
+    await record_event("guild_founded", f"گیلد «{name}» توسط {m.from_user.full_name} تأسیس شد.", source_id=f"guild:{name.lower()}:founded", players=[uid], guilds=[name], importance=3)
     terr = "این گروه به‌عنوان قلمرو گیلد ثبت شد! 🚩" if is_group(m) else "برای ثبت قلمرو، بهتره تو یه گروه این کار رو بکنی. 🚩"
     await m.reply(panel("purple", "🛡", "گیلد جدید تأسیس شد", [
         f"📛 نام: <b>{esc(name)}</b>", f"👑 رهبر: {esc(m.from_user.full_name)}",

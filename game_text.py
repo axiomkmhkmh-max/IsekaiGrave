@@ -66,6 +66,8 @@ def looks_like_game(c: str, n: str, m: Message) -> bool:
             STROLL_RE, DUEL_RE, GUILD_CREATE_RE, GUILD_JOIN_RE, GUILD_WAR_RE, GUILD_ME_RE, GUILD_LEAVE_RE,
             GUILD_INVITE_RE, EXCH_RE, SELL_RE, FORGE_RE, EQUIP_RE, GS_RE, DONATE_RE, FORT_RE, WORLD_RE, CHEAT_RE, CHURCH_RE)
     srch = (WHEEL_RE, BOARD_RE, CAFE_RE, NPC_RE, MARKET_RE, ACCEPT_RE, TRADE_RE)
+    if re.fullmatch(r"(?:سالنامه جهان|وقایع جهان|تاریخچه جهان|روزنامه جهان|اخبار جهان|تاریخچه من|وقایع من|وضعیت جهان)", c):
+        return True
     if any(r.fullmatch(c) for r in full) or any(r.search(c) for r in srch):
         return True
     if EXEC_RE.search(n):
@@ -220,6 +222,24 @@ async def handle_text(m: Message, bot: Bot):
         return
     if BOARD_RE.search(c):
         await do_board(m)
+        return
+
+    # ۶.۳) 📜 سال‌نامه‌ی پایدارِ جهان و تاریخچه‌ی شخصی
+    if re.fullmatch(r"(?:سالنامه جهان|وقایع جهان|تاریخچه جهان)", c):
+        from world_engine import show_chronicle
+        await show_chronicle(m, personal=False)
+        return
+    if re.fullmatch(r"(?:روزنامه جهان|اخبار جهان)", c):
+        from world_engine import show_world_news
+        await show_world_news(m)
+        return
+    if re.fullmatch(r"(?:تاریخچه من|وقایع من)", c):
+        from world_engine import show_chronicle
+        await show_chronicle(m, personal=True)
+        return
+    if re.fullmatch(r"وضعیت جهان", c):
+        from world_engine import show_world_status
+        await show_world_status(m)
         return
 
     # ۶.۴) 🌐 جهانِ زنده و 🌟 چیت‌اسکیل

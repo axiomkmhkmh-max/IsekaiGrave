@@ -410,6 +410,8 @@ async def create_event(ctx: dict, etype: Optional[str] = None, region: Optional[
         "status": "active", "history": [{"t": now, "text": "رویداد آغاز شد."}],
     }
     await store.wevents.insert_one(ev)
+    from world_engine import record_event
+    await record_event("world_event_started", f"{ev['icon']} رویداد جهانی «{ev['title']}» در {WD.REGION_FA[r]} آغاز شد.", source_id=f"wevent:{ev['id']}:start", region=r, importance=3)
     ctx.setdefault("events", []).append(ev)
     add_news(ctx, WD.NEWS_TEMPLATES["event_start"].format(icon=ev["icon"], title=ev["title"]), r)
     add_rumor(ctx, f"می‌گن {ev['title']}.", r, [], key=f"ev-{ev['id']}")
@@ -455,6 +457,14 @@ async def resolve_event(ctx: dict, ev: dict):
     if not won:
         return
     ev["status"] = "success" if success else "failed"
+    from world_engine import record_event
+    participant_ids = [int(u) for u, p in (ev.get("participants") or {}).items() if int(p.get("score", 0)) > 0]
+    await record_event(
+        "world_event_resolved",
+        f"رویداد جهانی «{ev['title']}» در {WD.REGION_FA[ev['region']]} {'با موفقیت مهار شد' if success else 'با شکست پایان یافت'}.",
+        source_id=f"wevent:{ev['id']}:resolved", players=participant_ids, region=ev["region"],
+        importance=4, consequence={"result": "success" if success else "failed", "progress": ev.get("progress", 0), "target": ev.get("target", 0)}
+    )
     cons = ev["on_success"] if success else ev["on_fail"]
     rg = ctx["w"]["regions"][ev["region"]]
     rg["danger"] = max(0, min(100, rg["danger"] + cons.get("danger", 0)))
@@ -618,10 +628,12 @@ async def explore_after(uid: int, biome: str, died: bool) -> list:
         if not died:
             for ev in evs:
                 key = f"participants.{uid}"
-                await store.wevents.update_one({"id": ev["id"], "status": "active", f"{key}.joined": {"$exists": False}},
-                                               {"$set": {f"{key}.joined": time.time()}})
+                # Contribution is globally shared but capped per player/event to prevent exploration farming.
                 r = await store.wevents.find_one_and_update(
-                    {"id": ev["id"], "status": "active"}, {"$inc": {"progress": 1, f"{key}.score": 1}},
+                    {"id": ev["id"], "status": "active", "progress": {"$lt": ev["target"]},
+                     "$or": [{f"{key}.actions": {"$lt": 5}}, {f"{key}.actions": {"$exists": False}}]},
+                    {"$inc": {"progress": 1, f"{key}.score": 1, f"{key}.actions": 1},
+                     "$set": {f"{key}.joined": time.time()}},
                     return_document=ReturnDocument.AFTER)
                 if r:
                     lines.append(f"{ev['icon']} به «{ev['title']}» کمک کردی ({min(r['progress'], r['target'])}/{r['target']})")

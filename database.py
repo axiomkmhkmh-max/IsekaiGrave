@@ -30,7 +30,7 @@ class Store:
         self.battles = db["battles"]        # ⚔️ نبردهای تاکتیکی (دوئل)
         self.sieges = db["sieges"]          # 🏰 محاصره‌ها
         self.wnpcs = db["wnpcs"]            # 🌍 NPCهای زنده (حافظه، روابط، مکان، اهداف)
-        self.wevents = db["wevents"]        # 🌍 رویدادهای جهان + تاریخچه
+        self.wevents = db["wevents"]        # 🌍 رویدادهای جهان + تاریخچه\n        self.chronicle = db["world_chronicle"]  # 📜 تاریخچه‌ی پایدار و سراسری جهان
         self.bounties = db["bounties"]      # 🎯 جایزه‌ی سر (skirmish.py)
         self.clashes = db["clashes"]        # 🏟 برخوردهای ژستی، تمرین‌ها و شرط‌بندی‌ها (arena.py)
         self.rrpg = db["rrpg"]              # 🎭 Reply-RPG: هیولای زنجیره‌ای، دوئلِ خیابانی، کمین، طلسم، سیاه‌چال (reply_rpg.py)
@@ -75,6 +75,11 @@ class Store:
         await self.users.create_index([("rr_streak_day", 1), ("rr_streak", -1)], sparse=True)   # 🔥 لیدربوردِ پشتکار
         await self.users.create_index([("rr_duel_wk", 1), ("rr_duel_wkw", -1)], sparse=True)    # 🎤 کریِ هفته
         await self.wevents.create_index("id", unique=True)
+        await self.chronicle.create_index("event_id", unique=True)
+        await self.chronicle.create_index([("occurred_at", -1)])
+        await self.chronicle.create_index([("players", 1), ("occurred_at", -1)])
+        await self.chronicle.create_index([("guilds", 1), ("occurred_at", -1)])
+        await self.chronicle.create_index([("region", 1), ("occurred_at", -1)])
         await self.wevents.create_index([("status", 1), ("region", 1)])
         # کاربرهای قدیمی (قبل از سیستم ثبت‌نام) رو خودکار «ثبت‌شده» حساب کن
         await self.users.update_many({"registered": {"$exists": False}}, {"$set": {"registered": True, "cls": None}})

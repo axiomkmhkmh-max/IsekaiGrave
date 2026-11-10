@@ -297,6 +297,8 @@ async def resolve_siege(bot, sid):
     elif a_tot > d_tot:
         result = "win"
         await store.territories.update_one({"key": s["key"]}, {"$set": {"owner": an, "since": utcnow()}}, upsert=True)
+        from world_engine import record_event
+        await record_event("territory_conquered", f"گیلد «{an}» قلمرو «{name}» را فتح کرد.", source_id=f"siege:{s['_id']}:conquered", players=list(att), guilds=[an], region=s["key"], importance=5, consequence={"territory": s["key"], "new_owner": an})
         lines.append(f"🏆 <b>{icon} {name} فتح شد!</b> مزیتِ «{TERR_PERKS[s['key']][0]}» حالا مالِ {esc(an)}ـه. 🎖")
         lines.append(f"💰 غنیمتِ شرکت‌کننده‌ها (سقف {WAR_CHEST_PLAYER_CAP} {GS} برای هر نفر):")
         lines += await pay(att, 100 + garrison // 2, 20)

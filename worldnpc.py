@@ -497,6 +497,13 @@ async def do_world(m):
     news = w.get("news", [])[-2:]
     if news:
         lines.append("📰 " + " | ".join(esc(x["text"]) for x in reversed(news)))
+    try:
+        from world_engine import chronicle_entries
+        history = await chronicle_entries(limit=2)
+        if history:
+            lines.append("📜 <b>از سال‌نامه:</b> " + " | ".join(esc(x.get("description", "")) for x in history))
+    except Exception:
+        log.exception("world chronicle preview failed")
     rums = w.get("rumors", [])[-2:]
     if rums:
         lines.append("🗞 " + " | ".join(esc(x["text"]) for x in reversed(rums)))

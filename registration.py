@@ -108,6 +108,8 @@ async def finish_registration(user: User, cls_key: Optional[str] = None, boon_ke
         return None
     if boon_key:
         await _give_boon(user.id, boon_key)
+    from world_engine import record_event
+    await record_event("player_registered", f"{user.full_name} به جهان ایسکا پیوست.", source_id=f"player:{user.id}:registered", players=[user.id], importance=1)
     spawn(enrich_flavor(user.id))                      # AI فقط متنِ توصیف رو (در پس‌زمینه) قشنگ می‌کنه
     return await store.get(user.id)
 
