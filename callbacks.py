@@ -173,6 +173,10 @@ async def handle_cb(cq: CallbackQuery, bot: Bot):
     await cq.answer()
 
     if kind == "x" and parts[1] in BIOMES:
+        from world_art import send_region_art
+        biome = BIOMES[parts[1]]
+        await send_region_art(m, parts[1], biome.get("name", "منطقه‌ی ایسکا"),
+                              "به این سرزمین قدم گذاشتی", [f"منطقه: {biome.get('name', parts[1])}"])
         await do_explore(m, parts[1])
     elif kind == "e" and len(parts) >= 4:
         await expedition_cb(uid, parts[1], parts[2], lambda text, markup: safe_edit(cq.message, text, markup))
@@ -231,6 +235,9 @@ async def handle_cb(cq: CallbackQuery, bot: Bot):
             text, markup = cat_panel(uid, doc, CAT_ACT[act])
             await safe_edit(cq.message, text, markup)
         elif act in ("go", "npc"):      # «npc»: پنل‌های قدیمیِ قبل از NPCهای زنده
+            from world_art import send_world_art
+            await send_world_art(m, "world", "نقشه‌ی جهان ایسکا", "هفت سرزمین؛ یک جهان مشترک",
+                                 [f"{b['icon']} {b['name']}" for b in list(BIOMES.values())[:4]])
             rows = [[btn(f"{b['icon']} {b['name']}", f"x:{k}:{uid}", b["color"])] for k, b in BIOMES.items()]
             await safe_edit(cq.message, panel("green", "🌍", "کجا بریم؟", [
                 "👇 یه مکان انتخاب کن تا ماجراجویی شروع بشه. 🧙 وسط راه ممکنه به آدم‌های زنده‌ی ایسکا بربخوری!\n💅 «هر جا بری، یا بدبخت میشی یا می‌میری. هر دو برای من سرگرم‌کننده‌ست.»",
@@ -241,36 +248,60 @@ async def handle_cb(cq: CallbackQuery, bot: Bot):
             await do_cheat(m)
         elif act == "pass":
             doc = await ensure_gen_profile(doc)
+            from world_art import send_world_art
+            await send_world_art(m, "character", doc.get("first_name") or "قهرمان ایسکا",
+                                 "هویت قهرمان در جهان مشترک",
+                                 [f"سطح: {doc.get('level', 1)}", f"کلاس: {doc.get('cls') or 'نامشخص'}"])
             await m.reply(render_passport(doc), reply_markup=kb(back_kb(uid)))
         elif act == "inv":
             await send_inventory(m, doc)
         elif act == "exch":
+            from world_art import send_world_art
+            await send_world_art(m, "market", "بازار روح ایسکا", "اقتصاد مشترک قهرمانان")
             await exchange_home(m)
         elif act == "forge":
             await forge_home(m)
         elif act == "gs":
+            from world_art import send_world_art
+            await send_world_art(m, "market", "خزانه‌ی GRAVE SIGIL", "دارایی و گردش مالی قهرمان")
             await gs_panel(m)
         elif act == "wheel":
+            from world_art import send_world_art
+            await send_world_art(m, "chronicle", "گردونه‌ی سرنوشت", "شانس، خطر و پاداش")
             await do_wheel(m)
         elif act == "arena":
+            from world_art import send_world_art
+            await send_world_art(m, "arena", "میدان نبرد ایسکا", "افتخار با شمشیر و اراده به دست می‌آید")
             from arena import do_arena
             await do_arena(m)
         elif act == "guild":
+            from world_art import send_world_art
+            await send_world_art(m, "guild", "تالار گیلد", "اتحاد، افتخار و سرنوشت مشترک")
             await do_guild_me(m)
         elif act == "war":
             await do_guild_war(m)
         elif act == "board":
+            from world_art import send_world_art
+            await send_world_art(m, "character", "تالار قهرمانان", "رتبه‌بندی و افتخار جهانی")
             await do_board(m)
         elif act == "market":
+            from world_art import send_world_art
+            await send_world_art(m, "market", "بازار سیاه ایسکا", "پیشنهادها و دادوستد گروهی")
             if is_group(m):
                 await m.reply(await drop_offer(m.chat.id), reply_markup=kb([btn("💸 میخرم!", "buy:0:0", "green")]))
             else:
                 await say(m, "بازار سیاه فقط تو گروه‌ها باز میشه. ربات رو به گروهت اضافه کن و اونجا امتحان کن. 🕶", "🕶", "بازار سیاه", "black")
         elif act == "quest":
+            from world_art import send_world_art
+            await send_world_art(m, "quest", "دفتر مأموریت‌ها", "هر انتخاب، بخشی از تاریخ جهان")
             await do_quests(m)
         elif act == "terr":
+            from world_art import send_world_art
+            await send_world_art(m, "region", "قلمروهای ایسکا", "سرزمین‌ها در یک نقشه‌ی مشترک")
             await do_terr(m)
         elif act == "boss":
+            from world_art import send_world_art
+            await send_world_art(m, "boss", "میدان نبرد ایسکا", "تهدیدهای فعال جهان")
             await do_boss_status(m)
         elif act == "marry":
             await do_marry_info(m, doc)

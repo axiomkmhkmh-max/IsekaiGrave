@@ -13,3 +13,5 @@ v4.1 — Living World Visual Update
 - Shared global world-boss encounter and cross-group contribution command; one active boss across the shared universe, five contribution actions per player.
 - Added Pillow dependency; images are rendered locally without a paid image-generation API.
 - MongoDB now enforces one active global world boss with a partial unique index; duplicate legacy active bosses are archived safely at startup.
+
+• v4.1.2: اتصال تصاویر محلیِ بخش‌ها به منوهای callback، انتخاب منطقه، ماجراجویی، NPC، کوله‌پشتی و آهنگری؛ تم‌های تصویری جداگانه برای زیست‌بوم‌ها.

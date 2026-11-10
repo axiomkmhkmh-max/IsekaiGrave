@@ -185,6 +185,8 @@ async def handle_text(m: Message, bot: Bot):
         await sell_command(m, int(sm.group(1)), int(sm.group(2)))
         return
     if FORGE_RE.fullmatch(c):
+        from world_art import send_world_art
+        await send_world_art(m, "forge", "کوره و آهنگری ایسکا", "ساخت، ارتقا و پیوند تجهیزات", ["آهنگری", "ارتقای تجهیزات"])
         await forge_home(m)
         return
     if sm := EQUIP_RE.fullmatch(c):
@@ -312,6 +314,8 @@ async def handle_text(m: Message, bot: Bot):
             await say(m, "الان باسی نیست. برای احضار بنویس «احضار باس». 🐉", "🐉", "باس", "red")
         return
     if BOSS_STATUS_RE.fullmatch(c):
+        from world_art import send_world_art
+        await send_world_art(m, "boss", "میدان نبرد ایسکا", "گزارش نبرد و تهدیدهای فعال")
         await do_boss_status(m)
         return
 
@@ -320,6 +324,8 @@ async def handle_text(m: Message, bot: Bot):
         await do_npc(m, "cafe")
         return
     if CHURCH_RE.fullmatch(c):
+        from world_art import send_world_art
+        await send_world_art(m, "npc", "معبد ایزدبانو", "نیایشگاه و پناهگاه مسافران")
         from worldnpc import do_church
         await do_church(m)
         return
@@ -336,12 +342,23 @@ async def handle_text(m: Message, bot: Bot):
     # ۸) سفر و ماجراجویی
     if STROLL_RE.fullmatch(c):
         doc = await store.get(m.from_user.id)
-        await do_explore(m, doc.get("location") or "city")
+        biome_key = doc.get("location") or "city"
+        from content import BIOMES
+        from world_art import send_region_art
+        biome = BIOMES.get(biome_key, {})
+        await send_region_art(m, biome_key, biome.get("name", "ماجراجویی ایسکا"),
+                              "آماده‌ی کشف، خطر و ماجراجویی", [f"منطقه: {biome.get('name', biome_key)}"])
+        await do_explore(m, biome_key)
         return
     if tm := TRAVEL_RE.fullmatch(c):
         key = detect_biome(tm.group(tm.lastindex or 0)) if tm.lastindex else None
         key = key or detect_biome(c)
         if key:
+            from content import BIOMES
+            from world_art import send_region_art
+            biome = BIOMES.get(key, {})
+            await send_region_art(m, key, biome.get("name", "منطقه‌ی ناشناخته"),
+                                  "به منطقه‌ای تازه قدم گذاشتی", [f"منطقه: {biome.get('name', key)}"])
             await do_explore(m, key)
             return
 

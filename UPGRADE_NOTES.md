@@ -150,3 +150,23 @@
 ### Verification
 - Python syntax compilation and procedural PNG generation are checked locally. `test_world_art.py` covers all ten visual themes and PNG dimensions.
 - Live Telegram delivery, deployed MongoDB concurrency, background-worker contention, and real production recovery were not verified in this environment.
+
+
+# IsekaiGrave v4.1.2 — اتصال تصاویر به مسیرهای واقعی بازی
+
+## تغییرات
+- تصویر نقشه هنگام باز کردن انتخاب منطقه از دکمه‌های منو نمایش داده می‌شود.
+- با انتخاب هر منطقه، تصویر متناسب با همان زیست‌بوم پیش از نتیجه‌ی ماجراجویی ارسال می‌شود.
+- برای جنگل، دریا، خرابه‌ها، پایتخت، آتشفشان، صحرا، قله‌های یخ‌زده و مرداب، تم تصویری جداگانه اضافه شد.
+- مسیرهای NPC کلاسیک (از جمله فراخوانی با دکمه)، کوله‌پشتی و آهنگری نیز تصویر اختصاصی می‌فرستند.
+- منوهای callback برای میدان نبرد، گیلد، قلمرو، مأموریت، بازار، خزانه، گردونه و رتبه‌بندی به تصویر متصل شدند.
+- کارت شخصیت از مسیر callback نیز تصویر دارد.
+- تصاویر همچنان با Pillow به‌صورت محلی ساخته می‌شوند؛ API پولی لازم نیست. سبک فعلی تصویرسازی فانتزیِ دوبعدی با عمق و سایه‌پردازی سه‌بعدی‌نماست، نه مدل سه‌بعدی واقعی یا تصویر مولد فوتورئال.
+
+## فایل‌های تغییرکرده
+`world_art.py`, `game_text.py`, `callbacks.py`, `npc.py`, `inventory.py`, `forge.py`
+
+## بررسی
+- کامپایل 69 فایل Python: موفق
+- تست `test_world_art.py`: 2 تست موفق
+- اتصال زنده به Telegram و ارسال تصویر در Railway: در این محیط قابل تأیید نیست؛ پس از دیپلوی باید دستی تست شود.

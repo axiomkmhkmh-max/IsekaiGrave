@@ -21,6 +21,13 @@ async def do_npc(m: Message, npc_key: str):
     uid = m.from_user.id
     doc = await store.get(uid)
     npc = NPCS[npc_key]
+    try:
+        from world_art import send_world_art
+        await send_world_art(m, "npc", npc.get("name", "شخصیت ایسکا"),
+                             f"{npc.get('name', 'ساکن ایسکا')} · دیدار در {BIOMES.get(doc.get('location') or 'city', {}).get('name', 'شهر')}",
+                             ["گفتگو و رابطه", "ماموریت و تعامل"])
+    except Exception:
+        pass
     loc = doc.get("location") or "city"
     if loc != "city":
         # بیرونِ شهر فقط NPCـی که همین الان سر راهته اینجاست؛ هر برخورد یک گفتگو (اتمیک، ضد دابل‌کلیک)

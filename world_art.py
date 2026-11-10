@@ -29,6 +29,18 @@ PALETTES = {
     "market": ((11, 38, 42), (29, 99, 81), (247, 196, 89)),
     "guild": ((28, 25, 55), (69, 58, 116), (166, 155, 255)),
     "quest": ((30, 37, 61), (68, 83, 117), (237, 194, 112)),
+    "forest": ((8, 42, 35), (30, 105, 70), (137, 224, 135)),
+    "sea": ((5, 28, 58), (17, 103, 145), (95, 220, 239)),
+    "ruins": ((37, 30, 46), (103, 77, 67), (224, 181, 112)),
+    "castle": ((24, 27, 57), (67, 75, 120), (184, 197, 255)),
+    "volcano": ((45, 12, 12), (137, 39, 20), (255, 151, 52)),
+    "desert": ((72, 43, 16), (174, 111, 43), (255, 218, 126)),
+    "snow": ((24, 47, 73), (94, 139, 176), (205, 239, 255)),
+    "swamp": ((13, 39, 32), (57, 86, 57), (166, 214, 112)),
+    "forge": ((48, 20, 12), (128, 57, 26), (255, 179, 67)),
+    "inventory": ((24, 34, 58), (65, 83, 115), (220, 205, 157)),
+    "arena": ((52, 17, 32), (128, 43, 54), (255, 184, 99)),
+    "profile": ((30, 20, 55), (83, 44, 118), (255, 204, 119)),
 }
 
 
@@ -123,6 +135,36 @@ def _render_world_art_cached(kind: str, title: str, subtitle: str, stats: tuple)
     d.polygon([(0,555),(210,405),(390,565),(620,400),(830,580),(1040,430),(1200,560),(1200,720),(0,720)], fill=(12,27,50,220))
     if kind == "boss":
         _draw_boss(d, accent, seed)
+    elif kind in {"forest", "sea", "ruins", "castle", "volcano", "desert", "snow", "swamp"}:
+        _draw_island(d, accent, seed)
+        # Region-specific silhouettes make each selected biome visually distinct.
+        if kind == "forest":
+            for x in (650, 760, 940, 1080):
+                d.polygon([(x,430),(x-65,250),(x-15,285),(x,170),(x+18,285),(x+65,245),(x+35,430)], fill=(12,54,42,255), outline=accent)
+        elif kind == "sea":
+            for yy in (485,535,585):
+                d.arc((620,yy-35,1170,yy+45), 0, 180, fill=accent, width=8)
+        elif kind == "ruins":
+            for x in (680,820,960):
+                d.rectangle((x,300,x+28,480), fill=(88,75,72,255), outline=accent, width=3)
+            d.polygon([(650,305),(850,250),(1010,305)], fill=(105,85,76,255), outline=accent)
+        elif kind == "castle":
+            d.rectangle((720,260,1030,455), fill=(37,43,76,255), outline=accent, width=4)
+            for x in (700,800,950,1050):
+                d.rectangle((x,220,x+55,330), fill=(43,49,82,255), outline=accent, width=3)
+                d.polygon([(x-8,222),(x+27,165),(x+63,222)], fill=(52,55,90,255), outline=accent)
+        elif kind == "volcano":
+            d.polygon([(650,450),(850,130),(1080,450)], fill=(56,30,32,255), outline=accent, width=5)
+            d.arc((800,115,900,210), 180, 350, fill=accent, width=10)
+        elif kind == "desert":
+            d.ellipse((700,380,1050,600), fill=(166,111,47,255), outline=accent, width=4)
+            d.ellipse((850,420,1130,610), fill=(194,139,67,255), outline=accent, width=4)
+        elif kind == "snow":
+            d.polygon([(640,460),(810,170),(920,330),(1030,135),(1160,460)], fill=(190,215,232,255), outline=accent, width=4)
+        elif kind == "swamp":
+            for x in (700,850,1010):
+                d.line((x,300,x-20,500), fill=(30,65,43,255), width=14)
+                d.ellipse((x-70,250,x+45,335), fill=(32,78,46,255), outline=accent, width=3)
     else:
         _draw_island(d, accent, seed)
     # Framed typography zone.
@@ -162,3 +204,15 @@ async def send_world_art(message, kind: str, title: str, subtitle: str = "", sta
     except Exception:
         # Pillow/font/platform issues must not break the text-based game.
         return False
+
+
+
+async def send_region_art(message, biome_key: str, title: str, subtitle: str = "", stats=None) -> bool:
+    """Render a biome-specific image for the selected exploration region."""
+    themes = {
+        "forest": "forest", "sea": "sea", "ruins": "ruins",
+        "city": "castle", "volcano": "volcano", "desert": "desert",
+        "snow": "snow", "swamp": "swamp",
+    }
+    theme = themes.get(str(biome_key), "region")
+    return await send_world_art(message, theme, title, subtitle, stats)

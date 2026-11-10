@@ -228,6 +228,11 @@ async def witch_restore(m):
 
 # ───────────────────────────── 🔥 خانه‌ی کوره ─────────────────────────────
 async def forge_home(m):
+    try:
+        from world_art import send_world_art
+        await send_world_art(m, "forge", "کوره و آهنگری ایسکا", "ساخت، ارتقا و پیوند تجهیزات")
+    except Exception:
+        pass
     uid = m.from_user.id
     doc = await store.get(uid)
     inv = doc.get("inventory") or []
