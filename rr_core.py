@@ -33,6 +33,7 @@ DECLINE_RE = re.compile(r"(?:رد|نه|نمیخوام|رد میکنم|ترسید
 REMATCH_RE = re.compile(r"(?:ریمچ|دوباره|انتقام|یه دست دیگه)")
 SUMMON_RE = re.compile(r"(?:احضار هیولا|هیولا بیار|هیولا بخون)")
 DUNGEON_RE = re.compile(r"(?:سیاه ?چال|سیاه ?چاله|دانجن|راه دو شاخه|ماجرای کوتاه)(?: کوچک| کوچیک)?")
+STREAK_RE = re.compile(r"(?:پشتکار|پشتکار من|استریک ریپلای)")
 HELP_RE = re.compile(r"(?:راهنمای ریپلای|راهنمای ریپلای ها|ریپلای رپگ)")
 CHOICE_RE = re.compile(r"[12]")
 
@@ -90,7 +91,7 @@ def matches(raw: str, has_reply: bool, to_bot: bool = False) -> bool:
         return True
     if has_reply and (DUEL_START_RE.fullmatch(t) or CAST_RE.fullmatch(t) or DISPEL_RE.fullmatch(t) or BUYOUT_RE.fullmatch(t)):
         return True
-    return bool(SUMMON_RE.fullmatch(t) or DUNGEON_RE.fullmatch(t) or HELP_RE.fullmatch(t))
+    return bool(SUMMON_RE.fullmatch(t) or DUNGEON_RE.fullmatch(t) or HELP_RE.fullmatch(t) or STREAK_RE.fullmatch(t))
 
 
 # ───────────────────────────── ⚔️ زنجیره‌ی حمله ─────────────────────────────

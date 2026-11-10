@@ -32,12 +32,12 @@ from economy import burn, credit, debit
 from players import adjust_survival, gold_bonus, grant, heal_bonus, loss_cut
 from rr_core import (
     ACCEPT_RE, BUYOUT_RE, CAST_RE, CHAIN_WINDOW, COUNTER_RE, COVER_RE, DECLINE_RE, DISPEL_RE, DUEL_START_RE,
-    DUNGEON_RE, HELP_RE, HIT_CD, HIT_RE, MOVES, OPEN_RE, PRAY_RE, REMATCH_RE, STRIKE_WINDOW, SUMMON_RE,
+    DUNGEON_RE, HELP_RE, STREAK_RE, HIT_CD, HIT_RE, MOVES, OPEN_RE, PRAY_RE, REMATCH_RE, STRIKE_WINDOW, SUMMON_RE,
     bar, duel_roll, duel_stake, hit_damage, parry_damage, parse_choice, parse_curse_type, parse_move,
     rank_share, split_loot, strike_after_cover, tally, tok,
 )
 from ui import panel
-from utils import day_key, esc, is_group, spawn, utcnow
+from utils import day_key, esc, ir_now, is_group, spawn, utcnow
 
 AFTER = ReturnDocument.AFTER
 BEFORE = ReturnDocument.BEFORE
@@ -1137,6 +1137,58 @@ async def _dg_finish(bot: Bot, ev: dict, sc: dict, path: str, votes: dict, choic
                                          "🧭 دوباره؟ بنویس «سیاه چال»"))
 
 
+# ═════════════════════════════ 🔥 پشتکار ═════════════════════════════
+async def _streak_tick(m, uid: int):
+    """اولین کنشِ ریپلاییِ هر روز: زنجیره‌ی پشتکار +۱ و پاداش (اتمیک؛ روزی یک‌بار)."""
+    try:
+        today = day_key()
+        yday = (ir_now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        doc = await store.users.find_one({"user_id": uid}, {"rr_streak": 1, "rr_streak_day": 1})
+        if not doc or doc.get("rr_streak_day") == today:
+            return
+        old = int(doc.get("rr_streak", 0))
+        n = old + 1 if doc.get("rr_streak_day") == yday else 1
+        res = await store.users.update_one({"user_id": uid, "rr_streak_day": {"$ne": today}},
+                                           {"$set": {"rr_streak": n, "rr_streak_day": today}, "$max": {"rr_streak_best": n}})
+        if not res.modified_count:
+            return
+        k = min(n, C.STREAK_CAP)
+        g, x = C.STREAK_GS * k, C.STREAK_XP * k
+        await grant(uid, gold=g, xp=x)
+        lines = []
+        if old == 0 and not doc.get("rr_streak_day"):
+            lines.append(C.STREAK_FIRST)
+        elif n == 1 and old >= 2:
+            lines.append(C.STREAK_RESET.format(old=old))
+        lines.append(C.STREAK_UP.format(n=n, g=g, x=x, nx=n + 1))
+        if n in C.STREAK_MILESTONES:
+            lines[-1] = C.STREAK_MILESTONES[n] + " " + lines[-1]
+        t = C.STREAK_TITLES.get(n)
+        if t:
+            await store.users.update_one({"user_id": uid}, {"$addToSet": {"titles": t}})
+            lines.append(C.STREAK_NEW_TITLE.format(t=t))
+        await m.reply(panel("orange", "🔥", "پشتکار", lines))
+    except Exception:
+        log.exception("streak tick failed")
+
+
+async def _streak_panel(m):
+    doc = await store.get(m.from_user.id)
+    if not doc or not doc.get("registered"):
+        return False
+    n, day = int(doc.get("rr_streak", 0)), doc.get("rr_streak_day")
+    alive = day in (day_key(), (ir_now() - timedelta(days=1)).strftime("%Y-%m-%d"))
+    n = n if alive else 0
+    nxt = next((d for d in sorted(C.STREAK_MILESTONES) if d > n), None)
+    lines = [f"🔥 زنجیره‌ی فعلی: <b>{n}</b> روز · 🏅 بهترین: <b>{int(doc.get('rr_streak_best', n))}</b>",
+             "✅ امروز انجامش دادی!" if day == day_key() else "⏳ امروز هنوز کاری نکردی؛ یه کارِ ریپلایی بزن تا زنجیره نپره.",
+             f"🎁 پاداشِ فردا: {C.STREAK_GS * min(n + 1, C.STREAK_CAP)} GS و {C.STREAK_XP * min(n + 1, C.STREAK_CAP)} XP"]
+    if nxt:
+        lines.append(f"🎯 نشانِ بعدی: روز {nxt} {C.STREAK_MILESTONES[nxt]}")
+    await m.reply(panel("orange", "🔥", "پشتکارِ من", lines))
+    return True
+
+
 # ═════════════════════════════ 🔀 مسیریابی، هوک‌ها، ریکاوری ═════════════════════════════
 async def _route(m, bot: Bot, ev: dict, t: str, me: dict) -> bool:
     k = ev.get("kind")
@@ -1154,12 +1206,19 @@ async def _route(m, bot: Bot, ev: dict, t: str, me: dict) -> bool:
 
 
 async def handle(m, bot: Bot) -> bool:
-    """ورودیِ اصلی از game_text.handle_text؛ True = پیام مصرف شد."""
+    """ورودیِ اصلی از game_text.handle_text؛ True = پیام مصرف شد. (کنشِ موفقِ گروه → تیکِ پشتکارِ روزانه)"""
     if not ENABLED or not m.from_user or m.from_user.is_bot or not m.text:
         return False
     t = tok(m.text)
     if not t or len(t) > 40:
         return False
+    done = await _handle(m, bot, t)
+    if done and is_group(m) and not (STREAK_RE.fullmatch(t) or HELP_RE.fullmatch(t)):
+        await _streak_tick(m, m.from_user.id)
+    return done
+
+
+async def _handle(m, bot: Bot, t: str) -> bool:
     try:
         if not is_group(m):
             return await _dm(m, bot, t)
@@ -1172,6 +1231,8 @@ async def handle(m, bot: Bot) -> bool:
             if HELP_RE.fullmatch(t):
                 await m.reply(panel("purple", "🎭", "راهنمای ریپلای‌ها", C.HELP_TEXT))
                 return True
+            if STREAK_RE.fullmatch(t):
+                return await _streak_panel(m)
             if ACCEPT_RE.fullmatch(t):
                 return await _duel_accept_plain(m, bot)
             if BUYOUT_RE.fullmatch(t):
