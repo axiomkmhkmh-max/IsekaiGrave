@@ -75,6 +75,19 @@ class Store:
         await self.users.create_index([("rr_streak_day", 1), ("rr_streak", -1)], sparse=True)   # 🔥 لیدربوردِ پشتکار
         await self.users.create_index([("rr_duel_wk", 1), ("rr_duel_wkw", -1)], sparse=True)    # 🎤 کریِ هفته
         await self.wevents.create_index("id", unique=True)
+        # Normalize legacy worlds that may already have spawned one boss per region.
+        # Keep the oldest active encounter and archive the extras instead of deleting them.
+        active_bosses = await self.wevents.find({"type": "world_boss", "status": "active"}).sort("started", 1).to_list(100)
+        for extra_boss in active_bosses[1:]:
+            await self.wevents.update_one(
+                {"id": extra_boss["id"], "status": "active"},
+                {"$set": {"status": "failed", "resolved_at": utcnow(), "legacy_duplicate": True},
+                 "$push": {"history": {"text": "برای یکپارچه‌سازی جهان، این برخورد تکراری بایگانی شد."}}},
+            )
+        # One active world boss across every region and Telegram chat.
+        await self.wevents.create_index("type", unique=True,
+            partialFilterExpression={"type": "world_boss", "status": "active"},
+            name="one_active_global_world_boss")
         await self.chronicle.create_index("event_id", unique=True)
         await self.chronicle.create_index([("occurred_at", -1)])
         await self.chronicle.create_index([("players", 1), ("occurred_at", -1)])

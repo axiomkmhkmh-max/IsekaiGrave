@@ -1,3 +1,4 @@
 aiogram>=3.27,<4
 motor>=3.6,<4
 dnspython>=2.6
+Pillow>=10.0,<13

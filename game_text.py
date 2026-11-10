@@ -66,6 +66,8 @@ def looks_like_game(c: str, n: str, m: Message) -> bool:
             STROLL_RE, DUEL_RE, GUILD_CREATE_RE, GUILD_JOIN_RE, GUILD_WAR_RE, GUILD_ME_RE, GUILD_LEAVE_RE,
             GUILD_INVITE_RE, EXCH_RE, SELL_RE, FORGE_RE, EQUIP_RE, GS_RE, DONATE_RE, FORT_RE, WORLD_RE, CHEAT_RE, CHURCH_RE)
     srch = (WHEEL_RE, BOARD_RE, CAFE_RE, NPC_RE, MARKET_RE, ACCEPT_RE, TRADE_RE)
+    if re.fullmatch(r"(?:کمک به باس جهانی|حمله به باس جهانی|مبارزه با باس جهانی)", c):
+        return True
     if re.fullmatch(r"(?:سالنامه جهان|وقایع جهان|تاریخچه جهان|روزنامه جهان|اخبار جهان|تاریخچه من|وقایع من|وضعیت جهان)", c):
         return True
     if any(r.fullmatch(c) for r in full) or any(r.search(c) for r in srch):
@@ -175,6 +177,8 @@ async def handle_text(m: Message, bot: Bot):
 
     # 🪙🪦🔥 اقتصادِ GS، بازار روح و کوره
     if EXCH_RE.fullmatch(c):
+        from world_art import send_world_art
+        await send_world_art(m, "market", "بازار روح ایسکا", "اقتصاد مشترک قهرمانان", ["خرید و فروش", "GRAVE SIGIL"])
         await exchange_home(m, bot)
         return
     if sm := SELL_RE.fullmatch(c):
@@ -207,6 +211,8 @@ async def handle_text(m: Message, bot: Bot):
         await do_guild_war(m)
         return
     if GUILD_ME_RE.fullmatch(c):
+        from world_art import send_world_art
+        await send_world_art(m, "guild", "تالار گیلد", "اتحاد، افتخار و سرنوشت مشترک", [f"گیلد: {me_doc.get('guild') or 'بی‌گیلد'}"])
         await do_guild_me(m)
         return
     if GUILD_LEAVE_RE.fullmatch(c):
@@ -222,6 +228,19 @@ async def handle_text(m: Message, bot: Bot):
         return
     if BOARD_RE.search(c):
         await do_board(m)
+        return
+
+    # ۶.۲) 🐉 مشارکت در باسِ جهانیِ مشترک از هر گروه/پیوی
+    if re.fullmatch(r"(?:کمک به باس جهانی|حمله به باس جهانی|مبارزه با باس جهانی)", c):
+        from worldsim import contribute_world_boss
+        result = await contribute_world_boss(m.from_user.id)
+        if not result:
+            await say(m, "در حال حاضر باس جهانی فعالی وجود نداره؛ وقتی بیدار بشه همه‌ی ایسکا باخبر می‌شن.", "🐉", "باس جهانی", "blue")
+        else:
+            ev = result["event"]
+            from world_art import send_world_art
+            await send_world_art(m, "boss", ev.get("title", "باس جهانی"), "ضربه‌ی تو به نبرد سراسری اضافه شد", [f"سلامت باقی‌مانده: {result['hp']}/{result['target']}", f"مشارکت تو: {result['actions']}/5"])
+            await say(m, f"⚔️ ضربه‌ات ثبت شد!\n🐉 {esc(ev['title'])}\n💔 سلامت باقی‌مانده: <b>{result['hp']}/{result['target']}</b>\n🧿 مشارکت تو: <b>{result['actions']}/5</b>\n\nاین نبرد در تمام گروه‌ها یکسانه.", "🐉", "نبرد جهانی", "red")
         return
 
     # ۶.۳) 📜 سال‌نامه‌ی پایدارِ جهان و تاریخچه‌ی شخصی
@@ -255,9 +274,13 @@ async def handle_text(m: Message, bot: Bot):
         await send_hub(m, me_doc)
         return
     if QUEST_RE.fullmatch(c):
+        from world_art import send_world_art
+        await send_world_art(m, "quest", "دفتر مأموریت‌ها", "هر انتخاب، بخشی از تاریخ جهان", ["روزانه · هفتگی · رویداد جهانی"])
         await do_quests(m)
         return
     if TERR_RE.fullmatch(c):
+        from world_art import send_world_art
+        await send_world_art(m, "region", "قلمروهای ایسکا", "سرزمین‌ها در یک نقشه‌ی مشترک", ["مالکیت گیلدها", "خطر و رونق منطقه‌ای"])
         await do_terr(m)
         return
     if sm := SIEGE_RE.fullmatch(c):
@@ -341,6 +364,8 @@ async def handle_text(m: Message, bot: Bot):
         return
     if PASSPORT_RE.fullmatch(c):
         me_doc = await ensure_gen_profile(me_doc)
+        from world_art import send_world_art
+        await send_world_art(m, "character", me_doc.get("first_name") or "قهرمان ایسکا", "هویت قهرمان در جهان مشترک", [f"سطح: {me_doc.get('level', 1)}", f"کلاس: {me_doc.get('cls') or 'نامشخص'}", f"گیلد: {me_doc.get('guild') or 'بی‌گیلد'}"])
         await m.reply(render_passport(me_doc), reply_markup=kb(
             [btn("🌙 منو", f"m:main:{uid}", "blue"), btn("🎒 کوله‌پشتی", f"m:inv:{uid}", "green")]))
         return

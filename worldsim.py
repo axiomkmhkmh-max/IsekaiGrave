@@ -382,9 +382,14 @@ async def create_event(ctx: dict, etype: Optional[str] = None, region: Optional[
     now = ctx["now"]
     active = ctx.get("events", [])
     busy = {(e["type"], e["region"]) for e in active}
+    # Exactly one shared world boss may exist globally, never one per region/chat.
+    if etype == "world_boss" and any(e.get("type") == "world_boss" for e in active):
+        return None
     cands = []
     for k, t in WD.EVENT_TYPES.items():
         if etype and k != etype:
+            continue
+        if k == "world_boss" and any(e.get("type") == "world_boss" for e in active):
             continue
         for r in ([region] if region and region in t["regions"] else t["regions"]):
             if (k, r) in busy:
@@ -407,9 +412,17 @@ async def create_event(ctx: dict, etype: Optional[str] = None, region: Optional[
         "started": now, "ends_at": now + random.randint(*t["hours"]) * 3600, "difficulty": diff,
         "target": WD.event_target(diff), "progress": 0, "reward": WD.event_reward(diff), "mods": t["mods"],
         "on_success": t["ok"], "on_fail": t["fail"], "power": t.get("power", {}), "participants": {},
+        "boss_hp": WD.event_target(diff) if k == "world_boss" else None,
+        "boss_max_hp": WD.event_target(diff) if k == "world_boss" else None,
         "status": "active", "history": [{"t": now, "text": "رویداد آغاز شد."}],
     }
-    await store.wevents.insert_one(ev)
+    try:
+        await store.wevents.insert_one(ev)
+    except DuplicateKeyError:
+        # Another worker created the one globally unique boss in the same tick.
+        if k == "world_boss":
+            return None
+        raise
     from world_engine import record_event
     await record_event("world_event_started", f"{ev['icon']} رویداد جهانی «{ev['title']}» در {WD.REGION_FA[r]} آغاز شد.", source_id=f"wevent:{ev['id']}:start", region=r, importance=3)
     ctx.setdefault("events", []).append(ev)
@@ -587,6 +600,29 @@ async def world_tick():
         await _run_tick(sim_now, use_ai=(i == steps - 1))
 
 
+async def contribute_world_boss(uid: int) -> Optional[dict]:
+    """Join the single shared boss from any Telegram chat; max five valid actions/player/event."""
+    active = await store.wevents.find_one({"type": "world_boss", "status": "active"})
+    if not active:
+        return None
+    key = f"participants.{int(uid)}"
+    result = await store.wevents.find_one_and_update(
+        {"id": active["id"], "type": "world_boss", "status": "active",
+         "progress": {"$lt": active["target"]},
+         "$or": [{f"{key}.actions": {"$lt": 5}}, {f"{key}.actions": {"$exists": False}}]},
+        {"$inc": {"progress": 1, f"{key}.score": 1, f"{key}.actions": 1},
+         "$set": {f"{key}.joined": time.time()}},
+        return_document=ReturnDocument.AFTER,
+    )
+    if not result:
+        return None
+    hp = max(0, int(result.get("target", 0)) - int(result.get("progress", 0)))
+    await store.wevents.update_one({"id": result["id"], "status": "active"}, {"$set": {"boss_hp": hp}})
+    _cache["t"] = 0.0
+    return {"event": result, "hp": hp, "target": int(result.get("target", 0)),
+            "actions": int((result.get("participants") or {}).get(str(uid), {}).get("actions", 0))}
+
+
 async def world_loop(bot):
     global _bot
     _bot = bot
@@ -636,6 +672,8 @@ async def explore_after(uid: int, biome: str, died: bool) -> list:
                      "$set": {f"{key}.joined": time.time()}},
                     return_document=ReturnDocument.AFTER)
                 if r:
+                    if ev.get("type") == "world_boss":
+                        await store.wevents.update_one({"id": ev["id"], "status": "active"}, {"$set": {"boss_hp": max(0, int(r.get("target", 0)) - int(r.get("progress", 0)))}})
                     lines.append(f"{ev['icon']} به «{ev['title']}» کمک کردی ({min(r['progress'], r['target'])}/{r['target']})")
         if evs:
             _cache["t"] = 0.0

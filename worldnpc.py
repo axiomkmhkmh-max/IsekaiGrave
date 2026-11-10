@@ -280,6 +280,8 @@ async def do_world_npc(m, npc_id: str, topic: str = "hi"):
         await m.reply(panel("purple", ic, nm, [f"<b>{esc(nm)}</b> دیگه اینجا نیست؛ پی کارش رفته. 🌬", "با ماجراجویی دوباره سرِ راه پیداشون می‌کنی. 👣"]),
                       reply_markup=kb([btn("🌍 ادامه‌ی ماجراجویی", f"x:{loc}:{uid}", "green")]))
         return
+    from world_art import send_world_art
+    await send_world_art(m, "npc", npc.get("name", "شخصیت جهان"), f"{npc.get('race', 'موجود')} · {npc.get('cls', 'رهگذر')} · {WD.REGION_FA.get(npc.get('location'), 'ایسکا')}", [f"شهرت نزد تو: {WS.opinion_of(npc, uid)}", f"حال‌وهوا: {npc.get('emotion', 'نامشخص')}"])
     set_talk(uid, npc_id, loc)
     await _touch_talk(npc, uid, topic)
     npc = await store.wnpcs.find_one({"id": npc_id}) or npc
@@ -517,6 +519,12 @@ async def do_world(m):
     here = await store.wnpcs.find({"location": loc}).to_list(10)
     if here:
         lines.append("👥 اینجا هستن: " + "، ".join(f"{n['icon']}{esc(n['name'])}" for n in here[:5]))
+    from world_art import send_world_art
+    boss = next((e for e in evs if e.get("type") == "world_boss"), None)
+    if boss:
+        await send_world_art(m, "boss", boss.get("title", "باس جهانی"), boss.get("desc", "تهدیدی برای تمام ایسکا"), [f"سلامت: {max(0, boss.get('target', 0)-boss.get('progress', 0))}/{boss.get('target', 0)}", f"مشارکت‌کنندگان: {len(boss.get('participants') or {})}"])
+    else:
+        await send_world_art(m, "world", "جهانِ زندهٔ ایسکا", "چهار منطقه؛ هزاران سرنوشت؛ یک جهان مشترک", [f"روز جهان: {c['day']}", f"رویدادهای فعال: {len(evs)}"])
     await m.reply(panel("blue", "🌐", "جهانِ زندهٔ ایسکا", lines), reply_markup=kb(
         [btn("🌍 برو ماجراجویی", f"m:go:{uid}", "green"), btn("🌙 منو", f"m:main:{uid}", "blue")]))
 

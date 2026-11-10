@@ -8,3 +8,8 @@
 • 🧭 بازیکنِ تازه‌وارد بعد از امضای قرارداد پیامِ «سه قدمِ اول» می‌گیره
 • 📚 همه‌ی دستورها: «دستورات»
 \n# نسخه 4.0 — بنیادِ جهانِ مشترک\n• 🌍 شناسه‌ی شخصیت سراسری بر پایه‌ی Telegram user_id؛ گروه‌ها جهان جداگانه نمی‌سازند.\n• 📜 کالکشن پایدار world_chronicle برای ثبت یکتای رویدادهای مهم؛ ثبت‌نام، تأسیس گیلد، آغاز/پایان رویداد جهانی و فتح قلمرو ثبت می‌شوند.\n• 🧭 دستورهای «وضعیت جهان»، «سالنامه جهان» و «تاریخچه من» اضافه شدند.\n• 🗂 ایندکس یکتا برای event_id و ایندکس‌های زمان، بازیکن، گیلد و منطقه اضافه شدند.\n• 🗞 دستور «روزنامه جهان» برای نمایش خبرهای واقعی ثبت‌شده در سال‌نامه.\n• 🛡 مشارکت هر بازیکن در هر رویداد جهانی سقف ۵ کنش دارد؛ پیشرفت رویداد از هدف عبور نمی‌کند.\n
+v4.1 — Living World Visual Update
+- Procedural fantasy artwork for major Telegram game sections (world, boss, NPC, chronicle, newspaper, character, market, guild, quests, regions).
+- Shared global world-boss encounter and cross-group contribution command; one active boss across the shared universe, five contribution actions per player.
+- Added Pillow dependency; images are rendered locally without a paid image-generation API.
+- MongoDB now enforces one active global world boss with a partial unique index; duplicate legacy active bosses are archived safely at startup.

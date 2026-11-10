@@ -139,42 +139,14 @@
 - GS بین بازیکن‌ها فقط از مسیرِ بازار منتقل میشه (با کارمزدِ سوخته)؛ هنوز راهِ ۱۰۰٪ ضدِ «اکانتِ جعلی» نیست، ولی سقفِ درآمد، کارمزد، حداقل سطح، سقفِ روزانه‌ی خزانه و ضدتکراریِ دوئل فارمِ سریع رو سخت می‌کنن.
 - اعدادِ توازن (سقف‌ها، کارمزد، هزینه‌ها) حدسِ اولیه‌ان؛ بعد از چند روز بازی واقعی تنظیم کن.
 
-# 🌍 IsekaiGrave v4.0 — بنیاد جهان مشترک و سال‌نامه
+## v4.1 — Living World + Procedural Visual Layer (2026-11-10)
 
-## ممیزی و معماری موجود
-- پروژه از قبل دارای Python + aiogram 3 + Motor/MongoDB است.
-- هویت بازیکن از قبل در `users.user_id` یکتا بوده و `chats` صرفاً گروه‌های دیده‌شده را نگه می‌دارد؛ بنابراین شخصیت جداگانه بر اساس گروه ساخته نمی‌شود.
-- زیرساخت جهان زنده از قبل در `worldsim.py`، `worlddata.py`، `worldnpc.py` و کالکشن‌های `meta`، `wnpcs` و `wevents` وجود داشته است.
-- گیلد/قلمرو، اقتصاد GS، بازار و نبردها نیز ماژول‌های مستقل موجود دارند؛ این نسخه آن‌ها را بازنویسی یا حذف نمی‌کند.
+- Added `world_art.py`: locally rendered, deterministic fantasy PNG artwork with an isometric/3D-inspired style. No paid image API or external credentials are required; Pillow is the only new runtime dependency.
+- Added visual cards to world status, the living-world panel, global/personal chronicles, world newspaper, NPC encounters, character passport, quests, territories, guild hall, and Grave Exchange.
+- Added a single globally shared world-boss encounter guard (one active boss for all regions/chats), backed by a MongoDB partial unique index, and a global `کمک به باس جهانی` / `حمله به باس جهانی` / `مبارزه با باس جهانی` action. Legacy duplicate active bosses are archived (not deleted) during index setup.
+- Global boss contributions are stored on the canonical event document and capped at five actions per Telegram user per encounter. Existing exploration contributions also update the shared boss HP display.
+- Existing NPC event reactions and persistent memory are reused; no separate NPC simulation or duplicate world collection was introduced.
 
-## تغییرهای این نسخه
-- `world_engine.py`: لایه‌ی پایه برای هویت canonical، وضعیت جهان و ثبت رویدادهای تاریخ‌نگاری با شناسه‌ی deterministic و idempotent.
-- `database.py`: افزودن `world_chronicle` و ایندکس‌های یکتا/زمان/بازیکن/گیلد/منطقه.
-- `worldsim.py`: ثبت آغاز و پایان واقعی رویدادهای جهان در سال‌نامه.
-- `registration.py`: ثبت پیوستن بازیکن جدید به تاریخچه‌ی شخصی.
-- `guilds.py`: ثبت تأسیس گیلد.
-- `territories.py`: ثبت فتح قلمرو و گیلد/شرکت‌کنندگان.
-- `worldnpc.py`: نمایش دو رویداد اخیر سال‌نامه در نمای جهان.
-- `game_text.py`: دستورهای «وضعیت جهان»، «سالنامه جهان»، «وقایع جهان»، «تاریخچه جهان»، «تاریخچه من» و «وقایع من».
-- `config.py`: نسخه 4.0 و پیام آپدیت.
-
-## دیتابیس و مهاجرت
-- کالکشن جدید: `world_chronicle`.
-- ایندکس‌ها: `event_id` یکتا؛ `occurred_at` نزولی؛ ترکیبی `players + occurred_at`، `guilds + occurred_at` و `region + occurred_at`.
-- مهاجرت سندهای کاربران لازم نیست؛ `users.user_id` موجود canonical است.
-- `ensure_indexes()` در شروع ربات ایندکس‌ها را ایجاد می‌کند. قبل از استقرار، بکاپ MongoDB بگیرید.
-
-## متغیرهای محیطی و سرویس‌ها
-- متغیر محیطی جدیدی لازم نیست.
-- سرویس خارجی جدید یا API پولی لازم نیست.
-- همچنان `TELEGRAM_BOT_TOKEN` و `MONGO_URI` الزامی‌اند.
-
-## اعتبارسنجی
-- اجرای compileall و بررسی نحوی همه‌ی فایل‌های Python انجام شد.
-- محیط فعلی فاقد aiogram، motor و pymongo است؛ بنابراین import/runtime و تست‌های متکی به Mongo/Telegram در این محیط اجرا نشدند.
-- اتصال به MongoDB واقعی، ارسال پیام تلگرام و سناریوهای چندکاربره/چندگروهی در این محیط قابل ادعا نیستند و باید پس از deploy آزمایش شوند.
-
-## محدودیت‌های باقی‌مانده
-- این نسخه «کل چشم‌انداز MMORPG» را یک‌باره تکمیل نمی‌کند. بازار فعلی و محاصره‌ها و رویدادها زیرساخت‌های قبلی‌اند؛ بازار جهانیِ کامل، معاملات مستقیمِ escrow، پادشاهی/ائتلاف سیاسی، دوست‌یابی بین‌گروهی، کارت تصویری شخصیت، چالش اجتماعی و فصل‌های کامل هنوز نیازمند فازهای مستقل‌اند.
-- پرداخت پاداش رویدادهای جهانی فعلی در سیستم موجود پس از claim وضعیت رویداد انجام می‌شود؛ برای تضمین بازیابی پرداخت در صورت crash وسط توزیع، به outbox/ledger idempotency مستقل نیاز است.
-\n- `world_engine.py`: دستور «روزنامه جهان» نیز از همان داده‌های واقعی سال‌نامه تولید می‌شود؛ خبر ساختگی تولید نمی‌شود.\n- مشارکت در هر رویداد جهانی برای هر بازیکن به ۵ کنش معتبر محدود شد؛ پیشرفت کلی هم از target عبور نمی‌کند.\n
+### Verification
+- Python syntax compilation and procedural PNG generation are checked locally. `test_world_art.py` covers all ten visual themes and PNG dimensions.
+- Live Telegram delivery, deployed MongoDB concurrency, background-worker contention, and real production recovery were not verified in this environment.
