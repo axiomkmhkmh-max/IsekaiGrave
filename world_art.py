@@ -1,7 +1,8 @@
-"""Procedural fantasy artwork for Telegram world panels.
+"""Offline fantasy artwork delivery for Telegram world panels.
 
-Creates lightweight, deterministic 3D/isometric-inspired PNG cards locally with Pillow.
-No external image API, credentials, or paid service is required.
+Primary images are pre-rendered assets bundled with the repository. Pillow-based
+procedural cards remain only as an offline fallback when an asset is missing.
+No external image API, credentials, GPU, or paid service is required.
 """
 from __future__ import annotations
 
@@ -10,7 +11,6 @@ import io
 import random
 import os
 import logging
-import base64
 from pathlib import Path
 from functools import lru_cache
 from typing import Iterable, Optional
@@ -19,11 +19,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 W, H = 1200, 720
 log = logging.getLogger("isekai-grave.art")
-ART_CACHE_DIR = Path(os.getenv("IMAGE_CACHE_DIR", "/tmp/isekai_grave_art_cache"))
-ART_API_URL = os.getenv("IMAGE_API_URL", "").strip()
-ART_API_KEY = os.getenv("IMAGE_API_KEY", "").strip()
-ART_MODEL = os.getenv("IMAGE_MODEL", "").strip()
-ART_TIMEOUT = float(os.getenv("IMAGE_API_TIMEOUT", "90"))
+ART_ASSET_DIR = Path(__file__).resolve().parent / "assets" / "world_art"
 ART_STYLE = ("Premium cinematic fantasy MMORPG concept art, highly detailed painterly realism, richly layered environment, physically based materials, dramatic atmospheric lighting, volumetric rays, intricate architecture and props, believable scale and perspective, professional AAA game key art, 16:9 landscape composition, no text, no letters, no watermark. Dark-fantasy-adventure aesthetic with rich color grading.")
 FONT_PATH = "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf"
 FONT_BOLD = "/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf"
@@ -237,68 +233,63 @@ def _art_prompt(kind: str, title: str, subtitle: str = "", stats=None) -> str:
     return f"{ART_STYLE} Scene: {scene}.{context} The image must communicate the scene visually; do not render any typography."
 
 
-async def _generate_remote_art(kind: str, title: str, subtitle: str = "", stats=None) -> Optional[bytes]:
-    """Use an optional OpenAI-compatible image-generation endpoint and cache the result."""
-    if not ART_API_URL:
-        return None
-    import aiohttp
+# Pre-rendered, bundled art assets: no external API, API key, GPU, or paid service.
+# Assets are part of the deployment package, so they survive worker restarts/redeploys.
+ART_ASSET_MAP = {
+    "world": "floating_island.jpg",
+    "region": "floating_island.jpg",
+    "forest": "floating_island.jpg",
+    "sea": "floating_island.jpg",
+    "ruins": "guild_hall.jpg",
+    "castle": "floating_island.jpg",
+    "volcano": "world_boss.jpg",
+    "desert": "market.jpg",
+    "snow": "floating_island.jpg",
+    "swamp": "guild_hall.jpg",
+    "boss": "world_boss.jpg",
+    "npc": "guild_hall.jpg",
+    "chronicle": "guild_hall.jpg",
+    "news": "guild_hall.jpg",
+    "character": "character.jpg",
+    "profile": "character.jpg",
+    "market": "market.jpg",
+    "guild": "guild_hall.jpg",
+    "quest": "floating_island.jpg",
+    "inventory": "character.jpg",
+    "arena": "world_boss.jpg",
+    "forge": "market.jpg",
+}
 
-    prompt = _art_prompt(kind, title, subtitle, stats)
-    cache_key = hashlib.sha256(f"{ART_API_URL}|{ART_MODEL}|{prompt}".encode("utf-8")).hexdigest()
+@lru_cache(maxsize=32)
+def _load_prebuilt_art(kind: str) -> Optional[bytes]:
+    filename = ART_ASSET_MAP.get(str(kind), ART_ASSET_MAP["world"])
+    path = ART_ASSET_DIR / filename
     try:
-        ART_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        cache_file = ART_CACHE_DIR / f"{cache_key}.png"
-        if cache_file.is_file() and cache_file.stat().st_size > 10_000:
-            return cache_file.read_bytes()
-
-        payload = {"prompt": prompt, "size": "1536x1024", "n": 1, "response_format": "b64_json"}
-        if ART_MODEL:
-            payload["model"] = ART_MODEL
-        headers = {"Content-Type": "application/json"}
-        if ART_API_KEY:
-            headers["Authorization"] = f"Bearer {ART_API_KEY}"
-        timeout = aiohttp.ClientTimeout(total=ART_TIMEOUT)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(ART_API_URL, json=payload, headers=headers) as response:
-                response.raise_for_status()
-                result = await response.json(content_type=None)
-            item = (result.get("data") or [{}])[0]
-            if item.get("b64_json"):
-                image_bytes = base64.b64decode(item["b64_json"])
-            elif item.get("url"):
-                async with session.get(item["url"]) as image_response:
-                    image_response.raise_for_status()
-                    image_bytes = await image_response.read()
-            else:
-                raise ValueError("Image API response has neither data[0].b64_json nor data[0].url")
-        # Validate image bytes before persisting.
-        with Image.open(io.BytesIO(image_bytes)) as generated:
-            generated.verify()
-        temp_file = cache_file.with_suffix(".tmp")
-        temp_file.write_bytes(image_bytes)
-        temp_file.replace(cache_file)
-        return image_bytes
-    except Exception as exc:
-        log.warning("Remote artwork generation failed for %s: %s", kind, exc)
+        payload = path.read_bytes()
+        # Validate bundled asset once before caching it.
+        with Image.open(io.BytesIO(payload)) as image:
+            image.verify()
+        return payload
+    except (OSError, ValueError) as exc:
+        log.warning("Bundled artwork unavailable (%s): %s", path, exc)
         return None
-
 
 async def send_world_art(message, kind: str, title: str, subtitle: str = "", stats=None) -> bool:
-    """Send premium generated artwork when configured; otherwise retain local safe fallback."""
+    """Send a bundled cinematic artwork asset without calling paid image APIs."""
     try:
         import asyncio
         from aiogram.types import BufferedInputFile
-        payload = await _generate_remote_art(kind, title, subtitle, stats)
-        source = "remote"
+        payload = await asyncio.to_thread(_load_prebuilt_art, str(kind))
         if payload is None:
-            source = "local-fallback"
+            # Last-resort offline fallback if an asset was accidentally omitted.
             payload = await asyncio.to_thread(render_world_art, kind, title, subtitle, stats)
-        await message.reply_photo(BufferedInputFile(payload, filename=f"isekai-{kind}.png"))
-        log.info("Artwork delivered: kind=%s source=%s chat_id=%s", kind, source,
-                 getattr(getattr(message, "chat", None), "id", "unknown"))
+            filename = f"isekai-{kind}.png"
+        else:
+            filename = f"isekai-{kind}.jpg"
+        await message.reply_photo(BufferedInputFile(payload, filename=filename))
         return True
     except Exception:
-        log.exception("Could not render/send world artwork (%s)", kind)
+        log.exception("Could not send world artwork (%s)", kind)
         return False
 
 

@@ -19,8 +19,7 @@ v4.1 — Living World Visual Update
 
 🎨 موتور تصویرسازی: promptهای اختصاصی سینمایی برای هر بخش، اتصال اختیاری به API تصویرساز سازگار با OpenAI، کش فایل و fallback امن در صورت قطعی سرویس.
 
-
-[Hotfix: image delivery]
-- CbMsg now implements reply_photo by delegating to the source Telegram message, fixing artwork delivery from inline-button callbacks (including region exploration).
-- Artwork delivery logs whether the remote image API or local fallback was used.
-- Cinematic AI artwork still requires IMAGE_API_URL and, when required by the provider, IMAGE_API_KEY and IMAGE_MODEL in Railway Variables.
+2026-11-10 — Offline image delivery
+- Bundled reusable cinematic art assets for market, character, guild hall, floating island, and world boss.
+- Disabled paid remote image API usage in the normal image-delivery path.
+- Added photo replies to callback message adapter to fix images failing from button menus.

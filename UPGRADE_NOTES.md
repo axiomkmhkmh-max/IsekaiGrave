@@ -180,3 +180,10 @@
 - در صورت نبود endpoint یا خطای سرویس، بازی بدون توقف به رندر محلی قبلی برمی‌گردد.
 - تنظیمات اختیاری: `IMAGE_API_URL`, `IMAGE_API_KEY`, `IMAGE_MODEL`, `IMAGE_API_TIMEOUT`, `IMAGE_CACHE_DIR`.
 - این پروژه به‌صورت پیش‌فرض به سرویس پولی یا کلید خاصی وابسته نشده است. کیفیت سینمایی واقعی نیازمند اتصال به یک سرویس/مدل تصویرساز است؛ رندر محلی Pillow صرفاً fallback است و هم‌سطح تصاویر مرجع نیست.
+
+## Offline artwork pack (2026-11-10)
+- Added bundled high-resolution fantasy artwork under `assets/world_art/`.
+- World panels now select and reuse static artwork instead of calling a paid image-generation API.
+- Added callback-message photo forwarding so images can be sent after inline-button interactions.
+- No image API credentials or new environment variables are required.
+- Some biomes share the closest available illustration until dedicated biome assets are added.
