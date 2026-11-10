@@ -72,6 +72,8 @@ class Store:
         await self.users.create_index([("rg_best_ms", 1)], sparse=True)
         await self.users.create_index([("sk_rp_wk", 1), ("sk_rp_w", -1)])
         await self.users.create_index([("sk_rp", -1)])
+        await self.users.create_index([("rr_streak_day", 1), ("rr_streak", -1)], sparse=True)   # 🔥 لیدربوردِ پشتکار
+        await self.users.create_index([("rr_duel_wk", 1), ("rr_duel_wkw", -1)], sparse=True)    # 🎤 کریِ هفته
         await self.wevents.create_index("id", unique=True)
         await self.wevents.create_index([("status", 1), ("region", 1)])
         # کاربرهای قدیمی (قبل از سیستم ثبت‌نام) رو خودکار «ثبت‌شده» حساب کن

@@ -17,9 +17,11 @@ import random
 import time
 from collections import defaultdict, deque
 from datetime import timedelta
+from types import SimpleNamespace
 from typing import Optional
 
 from aiogram import Bot
+from aiogram.enums import ChatType
 from aiogram.types import ReactionTypeEmoji, ReplyParameters
 from bson import ObjectId
 from pymongo import ReturnDocument
@@ -32,12 +34,15 @@ from economy import burn, credit, debit
 from players import adjust_survival, gold_bonus, grant, heal_bonus, loss_cut
 from rr_core import (
     ACCEPT_RE, BUYOUT_RE, CAST_RE, CHAIN_WINDOW, COUNTER_RE, COVER_RE, DECLINE_RE, DISPEL_RE, DUEL_START_RE,
-    DUNGEON_RE, HELP_RE, STREAK_RE, HIT_CD, HIT_RE, MOVES, OPEN_RE, PRAY_RE, REMATCH_RE, STRIKE_WINDOW, SUMMON_RE,
-    bar, duel_roll, duel_stake, hit_damage, parry_damage, parse_choice, parse_curse_type, parse_move,
-    rank_share, split_loot, strike_after_cover, tally, tok,
+    DUEL_LB_RE, DUNGEON_RE, HELP_RE, STREAK_LB_RE, STREAK_RE, HIT_CD, HIT_RE, MOVES, OPEN_RE, PRAY_RE, REMATCH_RE, STRIKE_WINDOW, SUMMON_RE,
+    bar, duel_roll, duel_stake, event_now, hit_damage, parry_damage, parse_choice, parse_curse_type, parse_move,
+    night_by_key, pick_week_monster, rank_share, split_loot, strike_after_cover, tally, tok, week_monster, with_night_gold,
+    WEEK_MONSTER_GAP, WEEK_MONSTER_POT_MULT,
 )
+from quests import quest_progress
+from weekly import add_guild_pts
 from ui import panel
-from utils import day_key, esc, ir_now, is_group, spawn, utcnow
+from utils import day_key, esc, ir_now, is_group, spawn, utcnow, week_key
 
 AFTER = ReturnDocument.AFTER
 BEFORE = ReturnDocument.BEFORE
@@ -174,6 +179,45 @@ async def _safe_edit(bot: Bot, chat_id: int, mid: Optional[int], text: str):
         log.debug("rrpg edit failed: %s", e)
 
 
+# ───────────────────────────── 🔗 اتصال به ماموریت‌ها، گیلد و رویدادها ─────────────────────────────
+class _QShim:
+    """جایگزینِ Message برای quest_progress وقتی از تایمر/پایانِ رویداد صداش می‌زنیم (فقط reply لازم داره)."""
+
+    def __init__(self, bot: Bot, chat_id: int, uid: int):
+        self.bot = bot
+        self.chat = SimpleNamespace(id=chat_id, type=ChatType.SUPERGROUP)
+        self.from_user = SimpleNamespace(id=uid, full_name="")
+
+    async def reply(self, text, **kw):
+        return await self.bot.send_message(self.chat.id, text, **kw)
+
+    answer = reply
+
+
+async def _quest(bot: Bot, chat_id: int, uid: int, *kinds: str):
+    """پیشرفتِ ماموریتِ روزانه/هفتگی (ambush / monster / dungeon / duel / duel_win / chest)؛ خطا هیچ‌وقت جریانِ بازی رو نمی‌شکنه."""
+    for k in kinds:
+        try:
+            await quest_progress(_QShim(bot, chat_id, uid), k, uid=uid)
+        except Exception:
+            log.exception("rrpg quest hook failed (%s)", k)
+
+
+async def _gpts(uid: int, pts: int):
+    """امتیازِ هفتگیِ گیلدِ بازیکن (اگه عضوِ گیلد باشه)."""
+    try:
+        doc = await store.users.find_one({"user_id": uid}, {"guild": 1})
+        if doc and doc.get("guild"):
+            await add_guild_pts(doc["guild"], pts)
+    except Exception:
+        log.exception("rrpg guild pts failed")
+
+
+def _night() -> Optional[dict]:
+    """شبِ ویژه‌ی فعلی (پنجشنبه/جمعه ۲۰ تا ۲۴ به وقتِ ایران) یا None."""
+    return event_now(ir_now())
+
+
 # ═════════════════════════════ ⚔️ ۱) هیولای زنجیره‌ای ═════════════════════════════
 def _chain_text(ev: dict, headline: str, rules: bool = False, extra: Optional[list] = None) -> str:
     hp = max(0, int(ev["hp"]))
@@ -192,15 +236,25 @@ def _chain_text(ev: dict, headline: str, rules: bool = False, extra: Optional[li
 
 async def _spawn_chain(bot: Bot, chat_id: int, summoner: Optional[int] = None) -> bool:
     n = max(2, min(8, len(_active_users(chat_id))))
-    emoji, name, mult = random.choice(C.MONSTERS)
+    night = _night()
+    # 👑 هیولای هفته: فقط هیولای خودکار (احضارِ پولی نه) و حداکثر یه بار در هر ۳ ساعت برای هر گروه
+    weekly = summoner is None and pick_week_monster(night) and not _cool(("wm", chat_id), WEEK_MONSTER_GAP)
+    if weekly:
+        emoji, name, mult = week_monster(week_key(), C.WEEK_MONSTERS)
+    else:
+        emoji, name, mult = random.choice(C.MONSTERS)
     max_hp = int((520 + 150 * n) * mult)
     ev = {"kind": "chain", "chat_id": chat_id, "status": "active", "emoji": emoji, "name": name, "hp": max_hp,
           "max_hp": max_hp, "chain": 0, "best_chain": 0, "last_hit_ts": 0.0, "last_hit_uid": None, "contrib": {},
-          "cd": {}, "names": {}, "strikes": {}, "pot": min(360, 60 + 25 * n), "anchors": [], "summoner": summoner,
+          "cd": {}, "names": {}, "strikes": {}, "pot": min(360, 60 + 25 * n), "anchors": [], "summoner": summoner, "weekly": weekly,
           "last_status_ts": _now(), "created_at": utcnow(), "expires_at": utcnow() + timedelta(seconds=CHAIN_TTL)}
+    if weekly:
+        ev["pot"] = int(ev["pot"] * WEEK_MONSTER_POT_MULT)
     res = await store.rrpg.insert_one(ev)
     ev["_id"] = res.inserted_id
-    head = random.choice(C.CHAIN_SPAWN).format(e=emoji, n=esc(name))
+    head = random.choice(C.WEEK_MONSTER_SPAWN if weekly else C.CHAIN_SPAWN).format(e=emoji, n=esc(name))
+    if night:
+        head = C.NIGHT_BANNERS[night["key"]] + "\n" + head
     await _post(bot, chat_id, ev["_id"], _chain_text(ev, head, rules=True))
     spawn(_chain_loop(bot, ev["_id"]))
     return True
@@ -441,7 +495,18 @@ async def _chain_finish(bot: Bot, ev: dict, last_uid: int):
             foot = f"🎁 جایزه‌ی MVP برای {_lk(mvp, ev['names'].get(str(mvp), '؟'))}: {esc(item)}"
         except Exception:
             log.exception("chain mvp failed")
+    if ev.get("weekly"):
+        try:
+            await store.users.update_one({"user_id": last_uid}, {"$addToSet": {"titles": C.WEEK_MONSTER_TITLE}})
+            item2, _, _ = roll_item(BLACK_MARKET_ITEMS)
+            await grant(last_uid, item=item2, xp=25)
+            lines.append(f"🌟 هیولای هفته! ضربه‌ی آخر: {_lk(last_uid, ev['names'].get(str(last_uid), '؟'))} — 🏷 «{C.WEEK_MONSTER_TITLE}» · 🎁 {esc(item2)}")
+        except Exception:
+            log.exception("weekly monster bonus failed")
     await _send(bot, ev["chat_id"], panel("yellow", "🏆", "هیولا شکست خورد!", lines, foot))
+    for u in order:                                            # 🎯 ماموریتِ «هیولا» + امتیازِ گیلد
+        await _quest(bot, ev["chat_id"], u, "monster")
+        await _gpts(u, 3)
 
 
 # ═════════════════════════════ 🥊 ۲) دوئلِ خیابانی ═════════════════════════════
@@ -645,13 +710,25 @@ async def _duel_resolve(bot: Bot, eid):
         await grant(wu, xp=12 + (8 if info["upset"] else 0))
         await grant(lu, xp=4)
         await adjust_survival(lu, -loss_cut(ldoc, 3))
-        await store.users.update_one({"user_id": wu}, {"$inc": {"rr_duel_w": 1}})
-        await store.users.update_one({"user_id": lu}, {"$inc": {"rr_duel_l": 1}})
+        real = bool(pa and pb)                                   # دوئلِ واقعی (هر دو حرکت زدن؛ نه انصراف)
+        done_today = await store.rrpg.count_documents({"kind": "duel", "pair": ev["pair"], "day": day_key(), "status": "done"})
+        board_ok = real and done_today < 2 * DUEL_PAIR_DAILY    # ضدِ فارمِ جدولِ هفتگی با اکانتِ دوم
+        wk = week_key()
+        for u_, f_ in ((wu, "rr_duel_wkw"), (lu, "rr_duel_wkl")):
+            await store.users.update_one({"user_id": u_, "rr_duel_wk": {"$ne": wk}},
+                                         {"$set": {"rr_duel_wk": wk, "rr_duel_wkw": 0, "rr_duel_wkl": 0}})
+            await store.users.update_one({"user_id": u_}, {"$inc": {("rr_duel_w" if u_ == wu else "rr_duel_l"): 1,
+                                                                    **({f_: 1} if board_ok else {})}})
         lines.append(f"✨ {wl}: +{12 + (8 if info['upset'] else 0)} XP · {ll}: +4 XP و −3٪ بقا")
         mid = await _send(bot, cid, panel("orange", "🥊", "نتیجه‌ی دوئلِ خیابانی", lines, C.DUEL_ENDER.format(w=wl)), reply_to=ev.get("arena_mid"))
         await store.rrpg.update_one({"_id": eid}, {"$set": {"status": "done", "winner": wu, "loser": lu, "paid": bool(got_amt),
                                                               "result_mid": mid},
                                                     "$push": {"anchors": {"$each": [mid] if mid else [], "$slice": -40}}})
+    if real:                                                     # 🎯 ماموریت‌ها + امتیازِ گیلد (بیرون از قفلِ رویداد)
+        await _quest(bot, cid, wu, "duel", "duel_win")
+        await _quest(bot, cid, lu, "duel")
+        if board_ok:
+            await _gpts(wu, 2)
 
 
 async def _duel_route(m, bot: Bot, ev: dict, t: str) -> bool:
@@ -696,17 +773,20 @@ AMBUSH_COLOR = {"goblin": "red", "chest": "yellow", "trap": "orange", "shrine": 
 
 
 async def _spawn_ambush(bot: Bot, chat_id: int, atype: Optional[str] = None) -> bool:
-    atype = atype or random.choices(["goblin", "chest", "trap", "shrine"], weights=[45, 25, 20, 10])[0]
+    night = _night()
+    atype = atype or random.choices(["goblin", "chest", "trap", "shrine"], weights=list(night["ambush_w"]) if night else [45, 25, 20, 10])[0]
     icon, title, texts, rules = C.AMBUSH_SPAWN[atype]
     word = random.choice(C.TRAP_WORDS) if atype == "trap" else None
     name = random.choice(C.GOBLIN_NAMES) if atype == "goblin" else None
     ev = {"kind": "ambush", "chat_id": chat_id, "atype": atype, "status": "open", "word": word, "gname": name,
           "claim_count": 0, "claimed": [], "wrong": [], "max_claims": AMBUSH_MAX[atype], "anchors": [], "posted_at": _now(),
+          "night": night["key"] if night else None,
           "created_at": utcnow(), "expires_at": utcnow() + timedelta(seconds=C.AMBUSH_TTL)}
     res = await store.rrpg.insert_one(ev)
     ev["_id"] = res.inserted_id
     body = random.choice(texts).format(n=esc(name or ""), w=esc(word or ""))
-    mid = await _post(bot, chat_id, ev["_id"], panel(AMBUSH_COLOR[atype], icon, title, [body, "┈┈┈┈┈┈┈┈┈┈", rules.format(w=esc(word or ""))]))
+    box = [body, "┈┈┈┈┈┈┈┈┈┈", rules.format(w=esc(word or ""))] + ([C.NIGHT_BANNERS[night["key"]]] if night else [])
+    mid = await _post(bot, chat_id, ev["_id"], panel(AMBUSH_COLOR[atype], icon, title, box))
     ev["msg"] = mid
     if mid:
         await store.rrpg.update_one({"_id": ev["_id"]}, {"$set": {"posted_at": _now()}})
@@ -747,17 +827,18 @@ async def _ambush_route(m, bot: Bot, ev: dict, t: str, me: dict) -> bool:
     if rank >= got["max_claims"]:
         await store.rrpg.update_one({"_id": ev["_id"], "status": "open"}, {"$set": {"status": "closed"}})
     ms = int((_now() - float(ev["posted_at"])) * 1000)
+    night = night_by_key(ev.get("night"))
     share = rank_share(rank) if atype in ("goblin", "trap") else 1.0
     a = _lk(uid, name)
     lines = [random.choice(C.AMBUSH_WIN[atype]).format(a=a, n=esc(ev.get("gname") or ""))]
     foot = f"⏱ {ms / 1000:.2f} ثانیه · رتبه‌ی {rank}"
     if atype == "goblin":
-        g = gold_bonus(me, int(random.randint(40, 90) * share))
+        g = with_night_gold(gold_bonus(me, int(random.randint(40, 90) * share)), night)
         item = roll_item(BLACK_MARKET_ITEMS)[0] if random.random() < 0.3 * share else None
         await grant(uid, gold=g, xp=int(20 * share) + 5, item=item)
         lines.append(f"🪙 +{g} {GS} · ✨ +{int(20 * share) + 5} XP" + (f" · 🎁 {esc(item)}" if item else ""))
     elif atype == "trap":
-        g = gold_bonus(me, int(random.randint(25, 60) * share))
+        g = with_night_gold(gold_bonus(me, int(random.randint(25, 60) * share)), night)
         await grant(uid, gold=g, xp=int(15 * share) + 4)
         lines.append(f"🪙 +{g} {GS} · ✨ +{int(15 * share) + 4} XP")
     elif atype == "shrine":
@@ -772,12 +853,16 @@ async def _ambush_route(m, bot: Bot, ev: dict, t: str, me: dict) -> bool:
             await debit(uid, 20, "rr_mimic")
             lines = [C.AMBUSH_MIMIC.format(a=a, d=d, g=20)]
         else:
-            g = gold_bonus(me, random.randint(40, 120))
+            g = with_night_gold(gold_bonus(me, random.randint(40, 120)), night)
             item = roll_item(BLACK_MARKET_ITEMS)[0]
             await grant(uid, gold=g, xp=random.randint(15, 30), item=item)
             lines.append(f"🪙 +{g} {GS} · 🎁 {esc(item)}")
     _soft(bot, m.chat.id, m.message_id, "🏆" if rank == 1 else "🎉")
     await m.reply(panel(AMBUSH_COLOR[atype], C.AMBUSH_SPAWN[atype][0], "سریع بودی!" if rank == 1 else "نزدیک بود!", lines, foot))
+    # 🎯 ماموریت‌ها («۳ کمین بگیر»، «صندوق رو ببر») + امتیازِ گیلد؛ صندوقِ گازگرفته حساب نمیشه
+    if not (atype == "chest" and lines and lines[0].startswith("👅")):
+        await _quest(bot, m.chat.id, uid, *(("ambush", "chest") if atype == "chest" else ("ambush",)))
+        await _gpts(uid, 2 if rank == 1 else 1)
     return True
 
 
@@ -1011,8 +1096,22 @@ def _dg_text(sc: dict, node: dict, step: int) -> str:
                  C.DG_VOTE_HINT.format(s=C.DG_TTL, q=C.DG_QUORUM))
 
 
+_dg_recent: dict = {}                                      # chat → آخرین سناریوها (ضدِ تکرار)
+
+
+def _dg_pick(chat_id: int) -> dict:
+    """سناریوی تصادفی که تو چند بارِ اخیرِ همین گروه نیومده باشه."""
+    recent = _dg_recent.setdefault(chat_id, deque(maxlen=max(1, min(6, len(C.DUNGEONS) - 1))))
+    pool = [d for d in C.DUNGEONS if d["id"] not in recent] or C.DUNGEONS
+    sc = random.choice(pool)
+    recent.append(sc["id"])
+    if len(_dg_recent) > 2000:
+        _dg_recent.clear()
+    return sc
+
+
 async def _dg_start(bot: Bot, chat_id: int, starter: Optional[int] = None) -> bool:
-    sc = random.choice(C.DUNGEONS)
+    sc = _dg_pick(chat_id)
     ev = {"kind": "dungeon", "chat_id": chat_id, "status": "active", "sid": sc["id"], "step": 0, "path": "", "votes": {},
           "party": {}, "step0": [], "cur_msg": None, "anchors": [], "starter": starter, "created_at": utcnow(),
           "expires_at": utcnow() + timedelta(seconds=C.DG_TTL * 3 + 20)}
@@ -1135,6 +1234,10 @@ async def _dg_finish(bot: Bot, ev: dict, sc: dict, path: str, votes: dict, choic
     await store.rrpg.update_one({"_id": ev["_id"]}, {"$set": {"status": "done", "ending": path}})
     await _send(bot, ev["chat_id"], panel("yellow" if kind in ("jackpot", "win") else "red", sc["icon"], sc["title"], lines,
                                          "🧭 دوباره؟ بنویس «سیاه چال»"))
+    for u in party:                                              # 🎯 ماموریتِ «سیاه‌چال» + امتیازِ گیلدِ کسایی که رأی دادن
+        await _quest(bot, ev["chat_id"], u, "dungeon")
+        if u in final:
+            await _gpts(u, 2)
 
 
 # ═════════════════════════════ 🔥 پشتکار ═════════════════════════════
@@ -1189,6 +1292,70 @@ async def _streak_panel(m):
     return True
 
 
+# ═════════════════════════════ 🏆 لیدربوردِ پشتکار و کریِ هفته ═════════════════════════════
+LB_SIZE = 10
+_MEDALS = ["🥇", "🥈", "🥉"]
+
+
+def _lb_base(chat_id: int) -> dict:
+    return {"chats": chat_id, "registered": True, "opted_out": {"$ne": True}, "banned": {"$ne": True}}
+
+
+def _lb_row(i: int, name: str, tail: str, me: bool) -> str:
+    mk = _MEDALS[i] if i < 3 else f"{i + 1}."
+    n = esc(name or "؟")
+    return f"{mk} {'<b>' + n + '</b> 👈' if me else n} — {tail}"
+
+
+async def _lb_streak(m) -> bool:
+    """🔥 پرپشتکارترین‌های همین گروه (فقط زنجیره‌های زنده: امروز یا دیروز فعال بودن)."""
+    uid = m.from_user.id
+    me = await store.get(uid)
+    if not me or not me.get("registered"):
+        return False
+    today, yday = day_key(), (ir_now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    flt = {**_lb_base(m.chat.id), "rr_streak_day": {"$in": [today, yday]}, "rr_streak": {"$gt": 0}}
+    rows = await store.users.find(flt, {"user_id": 1, "first_name": 1, "rr_streak": 1, "rr_streak_best": 1, "rr_streak_day": 1}) \
+        .sort([("rr_streak", -1), ("rr_streak_best", -1)]).limit(LB_SIZE).to_list(LB_SIZE)
+    if not rows:
+        await m.reply(panel("orange", "🔥", "لیدربوردِ پشتکار", ["هنوز کسی تو این گروه زنجیره‌ی زنده‌ای نداره. یه کارِ ریپلایی بزن و اولین نفر باش!"]))
+        return True
+    lines = [_lb_row(i, r.get("first_name"), f"<b>{int(r['rr_streak'])}</b> روز" + (" ✅" if r.get("rr_streak_day") == today else ""), r["user_id"] == uid)
+             for i, r in enumerate(rows)]
+    n = int(me.get("rr_streak", 0)) if me.get("rr_streak_day") in (today, yday) else 0
+    if n and not any(r["user_id"] == uid for r in rows):
+        rank = await store.users.count_documents({**flt, "rr_streak": {"$gt": n}}) + 1
+        lines += ["┈┈┈┈┈┈┈┈┈┈", f"📍 تو: <b>{n}</b> روز · رتبه‌ی <b>#{rank}</b>"]
+    elif not n:
+        lines += ["┈┈┈┈┈┈┈┈┈┈", "⏳ تو هنوز زنجیره‌ی زنده نداری؛ یه کارِ ریپلایی بزن!"]
+    await m.reply(panel("orange", "🔥", "لیدربوردِ پشتکار", lines, "✅ = امروز هم اومده · زنجیره با یه روزِ غیبت می‌پره"))
+    return True
+
+
+async def _lb_duel(m) -> bool:
+    """🎤 «کریِ هفته»: بیشترین بردِ دوئلِ خیابانیِ این هفته تو همین گروه."""
+    uid = m.from_user.id
+    me = await store.get(uid)
+    if not me or not me.get("registered"):
+        return False
+    wk = week_key()
+    flt = {**_lb_base(m.chat.id), "rr_duel_wk": wk, "rr_duel_wkw": {"$gt": 0}}
+    rows = await store.users.find(flt, {"user_id": 1, "first_name": 1, "rr_duel_wkw": 1, "rr_duel_wkl": 1}) \
+        .sort([("rr_duel_wkw", -1), ("rr_duel_wkl", 1)]).limit(LB_SIZE).to_list(LB_SIZE)
+    if not rows:
+        await m.reply(panel("orange", "🎤", "کریِ هفته", ["این هفته هنوز دوئلی تو این گروه ثبت نشده. ریپلای «دوئل» بزن و اول شو!"]))
+        return True
+    lines = [f"🎤 <b>کریِ این هفته:</b> {esc(rows[0].get('first_name') or '؟')}", "┈┈┈┈┈┈┈┈┈┈"]
+    lines += [_lb_row(i, r.get("first_name"), f"🏆 <b>{int(r.get('rr_duel_wkw', 0))}</b> برد · 💀 {int(r.get('rr_duel_wkl', 0))} باخت", r["user_id"] == uid)
+              for i, r in enumerate(rows)]
+    mine_w = int(me.get("rr_duel_wkw", 0)) if me.get("rr_duel_wk") == wk else 0
+    if mine_w and not any(r["user_id"] == uid for r in rows):
+        rank = await store.users.count_documents({**flt, "rr_duel_wkw": {"$gt": mine_w}}) + 1
+        lines += ["┈┈┈┈┈┈┈┈┈┈", f"📍 تو: <b>{mine_w}</b> برد · رتبه‌ی <b>#{rank}</b>"]
+    await m.reply(panel("orange", "🎤", "کریِ هفته", lines, "جدول با شروعِ هفته‌ی جدید صفر میشه · بردِ تکراریِ یه جفت تو روز سقف داره"))
+    return True
+
+
 # ═════════════════════════════ 🔀 مسیریابی، هوک‌ها، ریکاوری ═════════════════════════════
 async def _route(m, bot: Bot, ev: dict, t: str, me: dict) -> bool:
     k = ev.get("kind")
@@ -1213,7 +1380,7 @@ async def handle(m, bot: Bot) -> bool:
     if not t or len(t) > 40:
         return False
     done = await _handle(m, bot, t)
-    if done and is_group(m) and not (STREAK_RE.fullmatch(t) or HELP_RE.fullmatch(t)):
+    if done and is_group(m) and not (STREAK_RE.fullmatch(t) or HELP_RE.fullmatch(t) or STREAK_LB_RE.fullmatch(t) or DUEL_LB_RE.fullmatch(t)):
         await _streak_tick(m, m.from_user.id)
     return done
 
@@ -1233,6 +1400,10 @@ async def _handle(m, bot: Bot, t: str) -> bool:
                 return True
             if STREAK_RE.fullmatch(t):
                 return await _streak_panel(m)
+            if STREAK_LB_RE.fullmatch(t):
+                return await _lb_streak(m)
+            if DUEL_LB_RE.fullmatch(t):
+                return await _lb_duel(m)
             if ACCEPT_RE.fullmatch(t):
                 return await _duel_accept_plain(m, bot)
             if BUYOUT_RE.fullmatch(t):
@@ -1266,10 +1437,11 @@ async def _handle(m, bot: Bot, t: str) -> bool:
 
 async def _spawn_random(bot: Bot, chat_id: int):
     users = len(_active_users(chat_id))
+    night = _night()
     kinds, weights = ["ambush", "dungeon"], [75, 25]
     if users >= 4:
         kinds.append("chain")
-        weights.append(10)
+        weights.append(night["chain_w"] if night else 10)
     kind = random.choices(kinds, weights=weights)[0]
     if kind == "ambush":
         await _spawn_ambush(bot, chat_id)
@@ -1288,7 +1460,8 @@ async def on_message(m, bot: Bot):
         _activity[cid].append((now, uid))
         if (cid, uid) in _cursed:
             await _curse_tick(m, bot)
-        if random.random() < SPAWN_CHANCE and now - _last_spawn.get(cid, 0) > SPAWN_GAP and len(_active_users(cid)) >= 3:
+        night = _night()
+        if random.random() < SPAWN_CHANCE * (night["spawn_mult"] if night else 1.0) and now - _last_spawn.get(cid, 0) > SPAWN_GAP and len(_active_users(cid)) >= 3:
             _last_spawn[cid] = now
             if not await _wild_active(cid):
                 await _spawn_random(bot, cid)

@@ -6,7 +6,7 @@ from typing import Optional
 
 from aiogram.types import InlineKeyboardMarkup, User
 
-from config import REG_PROMPT_COOLDOWN, runtime
+from config import log, REG_PROMPT_COOLDOWN, runtime
 from content import BOONS, CHEATS, CLASSES, FORMS, GODDESS_NAME, GODDESS_TITLE, WORLDS
 from database import store
 from players import grant, status_for
@@ -156,3 +156,17 @@ def reg_kb_done(uid: int, with_gift: bool) -> InlineKeyboardMarkup:
     rows += [[btn("🎯 الان چیکار کنم؟", f"m:next:{uid}", "green")],
              [btn("🌍 اولین ماجراجویی", f"x:forest:{uid}", "green"), btn("🌙 منو", f"m:main:{uid}", "blue")]]
     return kb(*rows)
+
+
+def reg_kb_first_steps(uid: int) -> InlineKeyboardMarkup:
+    return kb([btn("🌍 قدمِ ۱: ماجراجویی", f"x:forest:{uid}", "green")],
+              [btn("🎯 الان چیکار کنم؟", f"m:next:{uid}", "blue"), btn("🌙 منو", f"m:main:{uid}", "blue")])
+
+
+async def send_first_steps(m, doc: dict):
+    """پیامِ «سه قدمِ اول»؛ فقط بعد از امضای موفقِ قرارداد (finish_registration یه‌بار موفق میشه). خطاش بازی رو نمی‌شکنه."""
+    try:
+        from welcome import first_steps_text
+        await m.reply(first_steps_text(doc.get("first_name") or "قهرمان"), reply_markup=reg_kb_first_steps(m.from_user.id))
+    except Exception:
+        log.exception("first steps message failed")

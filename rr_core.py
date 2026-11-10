@@ -35,6 +35,8 @@ SUMMON_RE = re.compile(r"(?:احضار هیولا|هیولا بیار|هیولا
 DUNGEON_RE = re.compile(r"(?:سیاه ?چال|سیاه ?چاله|دانجن|راه دو شاخه|ماجرای کوتاه)(?: کوچک| کوچیک)?")
 STREAK_RE = re.compile(r"(?:پشتکار|پشتکار من|استریک ریپلای)")
 HELP_RE = re.compile(r"(?:راهنمای ریپلای|راهنمای ریپلای ها|ریپلای رپگ)")
+STREAK_LB_RE = re.compile(r"(?:لیدربورد پشتکار|برترین پشتکار|برترین ?های پشتکار|رتبه پشتکار|جدول پشتکار)")
+DUEL_LB_RE = re.compile(r"(?:لیدربورد دوئل|لیدربورد کری|کری هفته|کری هفته ?ی گروه|برترین دوئل|برترین ?های دوئل|جدول دوئل)")
 CHOICE_RE = re.compile(r"[12]")
 
 MOVES = {"sword": "⚔️ شمشیر", "magic": "🔮 جادو", "shield": "🛡 سپر"}
@@ -91,7 +93,8 @@ def matches(raw: str, has_reply: bool, to_bot: bool = False) -> bool:
         return True
     if has_reply and (DUEL_START_RE.fullmatch(t) or CAST_RE.fullmatch(t) or DISPEL_RE.fullmatch(t) or BUYOUT_RE.fullmatch(t)):
         return True
-    return bool(SUMMON_RE.fullmatch(t) or DUNGEON_RE.fullmatch(t) or HELP_RE.fullmatch(t) or STREAK_RE.fullmatch(t))
+    return bool(SUMMON_RE.fullmatch(t) or DUNGEON_RE.fullmatch(t) or HELP_RE.fullmatch(t) or STREAK_RE.fullmatch(t)
+                or STREAK_LB_RE.fullmatch(t) or DUEL_LB_RE.fullmatch(t))
 
 
 # ───────────────────────────── ⚔️ زنجیره‌ی حمله ─────────────────────────────
@@ -210,3 +213,53 @@ def tally(votes: dict, rng=random) -> int:
 def bar(v: float, mx: float, w: int = 10) -> str:
     n = max(0, min(w, round(w * max(v, 0) / mx))) if mx else 0
     return "▰" * n + "▱" * (w - n)
+
+
+# ───────────────────────────── 🌙 رویدادهای زمان‌دار ─────────────────────────────
+NIGHT_FROM_HOUR = 20            # شبِ ویژه: ساعتِ ۲۰ تا ۲۴ به وقتِ ایران
+NIGHT_SPAWN_MULT = 2.0          # شانسِ ظهورِ رویدادِ خودکار
+NIGHT_GOLD_MULT = 1.2           # جایزه‌ی GS کمین‌ها (همچنان از players.grant و سقفِ روزانه رد میشه)
+WEEK_MONSTER_POT_MULT = 1.3
+WEEK_MONSTER_HP_MULT = 1.0      # ضریبِ جانِ هیولای هفته از خودِ جدولش میاد
+WEEK_MONSTER_BASE_P = 0.12      # شانسِ «هیولای هفته» بودنِ هر هیولای خودکار تو شبِ عادی
+WEEK_MONSTER_GAP = 3 * 3600     # حداقل فاصله‌ی دو هیولای هفته تو یه گروه
+
+
+NIGHTS = {
+    # key: (روزِ هفته با weekday() پایتون، پارامترها)
+    "thu": (3, {"key": "thu", "spawn_mult": NIGHT_SPAWN_MULT, "gold_mult": NIGHT_GOLD_MULT,
+                "ambush_w": (35, 35, 25, 5), "chain_w": 10, "week_p": 0.25}),
+    "fri": (4, {"key": "fri", "spawn_mult": NIGHT_SPAWN_MULT, "gold_mult": NIGHT_GOLD_MULT,
+                "ambush_w": (45, 20, 15, 20), "chain_w": 35, "week_p": 0.6}),
+}
+
+
+def event_now(now) -> Optional[dict]:
+    """شبِ ویژه‌ی فعلی (datetime به وقتِ ایران، بدونِ tz) یا None.
+    پنجشنبه=🌙 شبِ گنج‌یاب‌ها (کمینِ بیشتر، صندوق/تله پررنگ‌تر)، جمعه=🔥 جمعه‌ی هیولاها (هیولای بیشتر)."""
+    if now.hour < NIGHT_FROM_HOUR:
+        return None
+    for wd, params in NIGHTS.values():
+        if now.weekday() == wd:
+            return params
+    return None
+
+
+def night_by_key(key: Optional[str]) -> Optional[dict]:
+    """پارامترهای شبی که یه رویداد توش ساخته شده (نصفه‌شبِ ۲۴ پاداشِ کمینِ بازِ قبلی عوض نشه)."""
+    return NIGHTS[key][1] if key in NIGHTS else None
+
+
+def week_monster(week: str, table: list) -> tuple:
+    """هیولای این هفته؛ فقط به هفته بستگی داره (برای همه‌ی گروه‌ها یکسان و بعد از ری‌استارت ثابت)."""
+    import zlib
+    return table[zlib.crc32(week.encode()) % len(table)]
+
+
+def pick_week_monster(ev: Optional[dict], rng=random) -> bool:
+    """این هیولا «هیولای هفته» باشه؟ (احتمال به شبِ ویژه بستگی داره)"""
+    return rng.random() < (ev["week_p"] if ev else WEEK_MONSTER_BASE_P)
+
+
+def with_night_gold(g: int, ev: Optional[dict]) -> int:
+    return int(g * ev["gold_mult"]) if ev and g > 0 else int(g)

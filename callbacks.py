@@ -28,7 +28,7 @@ from worldnpc import do_cheat, do_use_cheat, do_world, do_world_npc, ensure_gen_
 from quests import do_quests
 from raid import do_boss_call, do_boss_status, do_raid_hit
 from registration import (
-    claim_gift, finish_registration, reg_kb_done, reg_done_text, reg_kb_boon, reg_kb_class, reg_prompt, reg_text_boon,
+    claim_gift, finish_registration, reg_kb_done, reg_done_text, reg_kb_boon, reg_kb_class, reg_prompt, reg_text_boon, send_first_steps,
     reg_text_class, start_registration,
 )
 from render import render_passport
@@ -130,6 +130,7 @@ async def handle_cb(cq: CallbackQuery, bot: Bot):
                 return
             await cq.answer("قرارداد امضا شد! 🎉")
             await safe_edit(cq.message, reg_done_text(ndoc, None, None), reg_kb_done(uid, True))
+            await send_first_steps(m, ndoc)
         elif act == "cls" and len(parts) >= 4 and parts[2] in CLASSES:
             ndoc = await finish_registration(user, parts[2], None)
             if not ndoc:
@@ -137,6 +138,7 @@ async def handle_cb(cq: CallbackQuery, bot: Bot):
                 return
             await cq.answer("قرارداد امضا شد! 🎉")
             await safe_edit(cq.message, reg_done_text(ndoc, parts[2], None), reg_kb_done(uid, True))
+            await send_first_steps(m, ndoc)
         elif act == "boon" and len(parts) >= 5 and parts[2] in CLASSES and parts[3] in BOONS:
             ndoc = await finish_registration(user, parts[2], parts[3])
             if not ndoc:
@@ -146,6 +148,7 @@ async def handle_cb(cq: CallbackQuery, bot: Bot):
             await safe_edit(cq.message, reg_done_text(ndoc, parts[2], parts[3]),
                             kb([btn("🎯 الان چیکار کنم؟", f"m:next:{uid}", "green")],
                                [btn("🌍 اولین ماجراجویی", f"x:forest:{uid}", "blue"), btn("🌙 منو", f"m:main:{uid}", "blue")]))
+            await send_first_steps(m, ndoc)
         elif act == "run":
             await cq.answer("فرار؟ 🏃")
             await safe_edit(cq.message, panel("red", "🏃", "فرار ناموفق", [
