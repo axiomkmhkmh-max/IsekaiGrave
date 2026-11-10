@@ -26,6 +26,8 @@ from guilds import (
     do_guild_war,
 )
 import reply_games
+import reply_rpg
+import rr_core
 import skirmish
 from cmdhelp import CMDS_RE, do_commands
 from intents import (
@@ -72,6 +74,9 @@ def looks_like_game(c: str, n: str, m: Message) -> bool:
         return True
     if TRAVEL_RE.fullmatch(c) and detect_biome(c):
         return True
+    rt = m.reply_to_message
+    if rr_core.matches(m.text or "", bool(rt), bool(rt and rt.from_user and rt.from_user.is_bot)):   # 🎭 Reply-RPG
+        return True
     if reply_games.matches(m.text or "", bool(m.reply_to_message)) or skirmish.matches(m.text or "", bool(m.reply_to_message)):   # ⚔️ حمله/تمرین/تحقیر/شرط/دزدی/ترمیم/هدیه/جایزه/جاسوسی/جنگ/میدان
         return True
     return False
@@ -111,6 +116,8 @@ async def handle_text(m: Message, bot: Bot):
         )
         await store.users.update_one({"user_id": m.from_user.id}, {"$addToSet": {"chats": m.chat.id}})
         _recent_chatters[m.chat.id].append((m.from_user.id, m.from_user.full_name))
+        if registered:
+            await reply_rpg.on_message(m, bot)        # 🎭 افکتِ طلسم + شانسِ ظهورِ کمین/هیولا/سیاه‌چال
 
     # ۰.۵) ثبت‌نام: بدون قرارداد، ورود به ایسکا ممنوعه
     if REG_RE.fullmatch(c):
@@ -132,6 +139,10 @@ async def handle_text(m: Message, bot: Bot):
 
     # ۱) اعدام اجباری
     if group and (("@" in n) or m.reply_to_message) and await do_forced(m, n, c):
+        return
+
+    # ۱.۳) 🎭 Reply-RPG: هیولای زنجیره‌ای، دوئلِ خیابانی، کمین، طلسم، سیاه‌چال (ریپلای/پیوی)
+    if await reply_rpg.handle(m, bot):
         return
 
     # ۱.۴) 🎭 باشگاهِ ریپلای: تاس، هفت‌تیر، بلوف، باشگاه، سریع ترین ها
